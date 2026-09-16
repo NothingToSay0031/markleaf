@@ -57,6 +57,33 @@ final class EditorWebView: WKWebView {
         super.mouseUp(with: event)
     }
 
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        droppedFileURLs(from: sender).isEmpty
+            ? super.draggingEntered(sender)
+            : .copy
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = droppedFileURLs(from: sender)
+        guard !urls.isEmpty else { return super.performDragOperation(sender) }
+
+        let drop = EditorDropPolicy.classify(urls)
+        for url in drop.images {
+            editorSession?.insertImageFile(at: url)
+        }
+        for url in drop.documents {
+            editorSession?.openDocument(at: url)
+        }
+        return !drop.isEmpty
+    }
+
+    private func droppedFileURLs(from sender: NSDraggingInfo) -> [URL] {
+        sender.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL] ?? []
+    }
+
     /// WKWebView does not reliably autoscroll a ProseMirror drag selection when
     /// the mouse reaches the viewport edge. Scroll from the host, then replay the
     /// current drag at the same window location so WebKit extends the selection.

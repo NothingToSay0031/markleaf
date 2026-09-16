@@ -33,6 +33,8 @@
 - Fixed whole-list-item highlight during drag or Shift+Arrow selection and drag autoscroll at window edges in long documents.
 - Fixed the modified marker remaining visible after undoing back to saved content.
 - Fixed read-only documents remaining renameable from the File menu.
+- Fixed pasted content escaping code blocks, inline code, YAML front matter, and footnote definitions.
+- Fixed image files dragged in from Finder or other apps not being inserted into the document.
 
 ## 1.7.5 — 2026-09-10
 

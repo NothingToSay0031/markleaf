@@ -3417,6 +3417,9 @@ export type MarkdownPasteResult = {
  * discarded merely because one Markdown construct is unsupported. */
 export function pasteMarkdownTextWithResult(editor: Editor, markdown: string): MarkdownPasteResult {
   if (!markdown) return { success: false, outcome: 'failed', error: 'Clipboard text is empty' }
+  if (selectionRequiresLiteralPaste(editor)) {
+    return pasteMarkdownAsPlainText(editor, markdown)
+  }
   const expanded = executeExpandedSourceCommand(editor, 'pasteText', markdown)
   if (expanded !== undefined) return { success: expanded, outcome: expanded ? 'plainText' : 'failed' }
 
@@ -3458,6 +3461,13 @@ export function pasteClipboardContentWithResult(
   plainText: string,
   html: string,
 ): { success: boolean; outcome: MarkdownPasteOutcome | 'formatted'; error?: string } {
+  if (selectionRequiresLiteralPaste(editor)) {
+    const literalText = plainText || (html
+      ? htmlPlainText(new DOMParser().parseFromString(html, 'text/html').body)
+      : '')
+    if (!literalText) return { success: false, outcome: 'failed' }
+    return pasteMarkdownAsPlainText(editor, literalText)
+  }
   const expanded = executeExpandedSourceCommand(editor, plainText ? 'pasteText' : 'pasteHtml', plainText || html)
   if (expanded !== undefined) return { success: expanded, outcome: expanded ? 'plainText' : 'failed' }
   if (plainText) {
@@ -3501,6 +3511,17 @@ function normalizePastedMarkdownContent(editor: Editor, value: any): { content: 
     return result
   }
   return { content: visit(value), changed }
+}
+
+function selectionRequiresLiteralPaste(editor: Editor): boolean {
+  const { $from, $to } = editor.state.selection
+  const sameParent = $from.parent === $to.parent
+  return sameParent && (
+    $from.parent.type.name === 'codeBlock'
+    || $from.parent.type.name === 'frontMatter'
+    || isFootnoteDefinitionBlock($from.parent)
+    || editor.isActive('code')
+  )
 }
 
 function summarizeMarkdownPasteError(error: unknown): string {
