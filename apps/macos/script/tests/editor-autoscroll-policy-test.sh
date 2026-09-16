@@ -17,8 +17,6 @@ grep -Fq 'override func mouseUp(with event: NSEvent)' "$VIEW" \
     || fail "autoscroll must stop on mouseup"
 grep -Fq 'isHandlingSyntheticDrag' "$VIEW" \
     || fail "synthetic drag replay must not recurse into autoscroll"
-grep -Fq 'window.scrollBy(0,' "$VIEW" \
-    || fail "autoscroll must scroll the editor document"
 grep -Fq 'element.scrollTop = next' "$VIEW" \
     || fail "autoscroll must stop when the document boundary is reached"
 

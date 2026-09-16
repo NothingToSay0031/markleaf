@@ -1860,6 +1860,10 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
                                 currentRevision: self.revision
                             )
                             self.statusText = self.isDirty ? L10n.t("已修改") : L10n.t("已保存")
+                            if snapshot.revision == self.revision {
+                                // 建立前端撤销对比基线；并发编辑时保持 revision 判脏，避免误清状态。
+                                self.send("markSaved", payload: ["markdown": snapshot.markdown])
+                            }
                             AppLog.info("文档已保存: \(url.path)")
                             if previousDocumentURL?.standardizedFileURL.path != url.standardizedFileURL.path {
                                 self.onAcquiredFileURL?(url)
@@ -2610,7 +2614,10 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
 
     /// 文件菜单中的“重命名”复用侧栏工作区条目的重命名对话框和移动规则。
     func renameActiveDocument() {
-        guard let url = documentURL else { return }
+        guard DocumentRenamePolicy.canRenameActiveDocument(
+            hasFileURL: documentURL != nil,
+            isReadOnly: isReadOnly
+        ), let url = documentURL else { return }
         renameWorkspaceEntry(
             WorkspaceEntry(name: url.lastPathComponent, path: url.path, isDirectory: false)
         )

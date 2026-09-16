@@ -491,11 +491,10 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     }
 
     private func editorPage() -> NSView {
-        let centersMultiTab = PreferencesWindowLayout.editorCentersMultiTabCheckbox(for: displayLanguage)
-        let centersBlockHandle = PreferencesWindowLayout.editorCentersBlockHandleCheckbox(for: displayLanguage)
-        var editorCenteredCheckboxes: Set<NSButton> = []
-        if centersMultiTab { editorCenteredCheckboxes.insert(multiTabCheck) }
-        if centersBlockHandle { editorCenteredCheckboxes.insert(blockHandleCheck) }
+        let editorCenteredCheckboxes: Set<NSButton> = [visualCjkAutoSpacingCheck]
+        let editorAlignedCheckboxes: Set<NSButton> = [
+            multiTabCheck, ignoreMaxWidthCheck, blockHandleCheck, restoreZoomCheck, ctrlWheelZoomCheck,
+        ]
         let primaryLabelWidth = ceil((L10n.t("基础行高") as NSString).size(
             withAttributes: [.font: NSFont.systemFont(ofSize: 13)]
         ).width)
@@ -526,7 +525,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             .field("", ctrlWheelZoomCheck),
             .centeredHint(L10n.t("部分排版设置可能由当前的排版样式接管，可到「外观」更改。")),
         ], labeledFieldLeadingInset: labeledFieldLeadingInset,
-           intrinsicallyCenteredCheckboxes: editorCenteredCheckboxes)
+           intrinsicallyCenteredCheckboxes: editorCenteredCheckboxes,
+           checkboxAlignmentControls: editorAlignedCheckboxes)
     }
 
     private func appearancePage() -> NSView {
@@ -906,7 +906,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         horizontalOffset: CGFloat? = nil,
         labelColumnMode: PreferencesWindowLayout.FieldLabelColumnMode = .languageMaximum,
         labeledFieldLeadingInset: CGFloat? = nil,
-        intrinsicallyCenteredCheckboxes: Set<NSButton> = []
+        intrinsicallyCenteredCheckboxes: Set<NSButton> = [],
+        checkboxAlignmentControls: Set<NSButton>? = nil
     ) -> NSView {
         let stack = NSStackView()
         stack.orientation = .vertical
@@ -926,7 +927,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             guard case .field(let title, let control) = row,
                   title.isEmpty,
                   let button = control as? NSButton,
-                  checkboxButtons.contains(button) else { return nil }
+                  checkboxButtons.contains(button),
+                  checkboxAlignmentControls?.contains(button) != false else { return nil }
             return button.fittingSize.width
         }.max()
         let fieldLabelFont = NSFont.systemFont(ofSize: 13)

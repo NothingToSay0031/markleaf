@@ -85,8 +85,6 @@ final class EditorWebView: WKWebView {
         guard direction != 0 else { return }
         let speed = CGFloat(EditorAutoscrollPolicy.speed(overflow: abs(direction)))
         let delta = speed * direction
-        let javascript = "window.scrollBy(0, \(delta));"
-
         isHandlingSyntheticDrag = true
         let checkAndScroll = """
         (() => {

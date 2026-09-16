@@ -5,6 +5,8 @@
 ### Added
 
 - Added Rename to the File menu for the currently opened local file.
+- Added modified-state animation in the title bar for non-multi-tab mode.
+- Added a Read-only title bar indicator for non-multi-tab mode.
 
 ### Changed
 
@@ -13,6 +15,8 @@
 - Tree and document-list scans now run independently, and cancelled scans are no longer applied after switching or closing a workspace.
 - Save and Save All are now disabled automatically when the current file is unmodified or already saved.
 - File actions have been removed from the tab context menu; they remain available in the File menu.
+- Adjusted the placement of several menu bar items.
+- Refined the Preferences window layout in English mode.
 
 ### Fixed
 
@@ -27,6 +31,8 @@
 - Fixed “Show Outline on the Right” showing as unchecked in the menu while enabled.
 - Fixed externally opened files, Open…, and recent files still creating a new tab when the external file open mode is set to Open in the Current Tab.
 - Fixed whole-list-item highlight during drag or Shift+Arrow selection and drag autoscroll at window edges in long documents.
+- Fixed the modified marker remaining visible after undoing back to saved content.
+- Fixed read-only documents remaining renameable from the File menu.
 
 ## 1.7.5 — 2026-09-10
 

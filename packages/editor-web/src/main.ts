@@ -86,6 +86,8 @@ let documentId: string = crypto.randomUUID()
 let documentLoaded = false
 let scrollRestoreGeneration = 0
 let revision = 0
+let savedMarkdown = ''
+let reportedContentDirty = false
 let compositionActive = false
 let compositionChanged = false
 let suppressUpdate = false
@@ -471,6 +473,14 @@ function sendEditorState(): void {
   sendEditorStatus()
 }
 
+function sendDirtyState(force = false): void {
+  if (!documentLoaded) return
+  const dirty = getActiveMarkdown() !== savedMarkdown
+  if (!force && dirty === reportedContentDirty) return
+  reportedContentDirty = dirty
+  send('dirtyChanged', { dirty })
+}
+
 const updateFormatPainterCursor = () => interactions.update()
 
 function bindEditorEvents(targetEditor: typeof editor): void {
@@ -487,7 +497,7 @@ function bindEditorEvents(targetEditor: typeof editor): void {
     }
 
     revision += 1
-    send('dirtyChanged', { dirty: true })
+    sendDirtyState()
     scheduleOutline()
     updateBlockHandleOverlay()
     sendEditorState()
@@ -518,7 +528,7 @@ function bindEditorEvents(targetEditor: typeof editor): void {
     compositionActive = false
     if (compositionChanged) {
       revision += 1
-      send('dirtyChanged', { dirty: true })
+      sendDirtyState()
       scheduleOutline()
       updateBlockHandleOverlay()
       sendEditorState()
@@ -531,7 +541,7 @@ bindEditorEvents(editor)
 function markSourceChanged(documentChanged: boolean): void {
   if (documentChanged) {
     revision += 1
-    send('dirtyChanged', { dirty: true })
+    sendDirtyState()
   }
   sendEditorState()
 }
@@ -1108,6 +1118,8 @@ async function handleMessage(value: unknown): Promise<void> {
       documentId = message.documentId
       documentLoaded = true
       revision = message.revision
+      savedMarkdown = payload.markdown
+      reportedContentDirty = false
       documentType = isPlainTextDocumentType(payload?.documentType) ? 'plainText' : 'markdown'
       readOnly = payload?.readOnly === true
       const restoreViewState = payload?.restoreViewState !== false
@@ -1161,8 +1173,12 @@ async function handleMessage(value: unknown): Promise<void> {
       }
       suppressUpdate = false
       updateCaretVisibility()
+      savedMarkdown = getActiveMarkdown()
       send('documentLoaded', undefined, message.requestId)
-      if (payload.initialDirty === true) send('dirtyChanged', { dirty: true })
+      if (payload.initialDirty === true) {
+        reportedContentDirty = true
+        send('dirtyChanged', { dirty: true })
+      }
       restoreEditorScrollTopAfterLayout(restoreViewState ? payload.scrollTop : 0)
       updateBlockHandleOverlay()
       sendOutline()
@@ -1231,6 +1247,13 @@ async function handleMessage(value: unknown): Promise<void> {
     case 'requestSnapshot':
       send('snapshot', { markdown: getActiveMarkdown(), scrollTop: getEditorScrollTop() }, message.requestId)
       break
+    case 'markSaved': {
+      const payload = message.payload as { markdown?: unknown }
+      if (typeof payload?.markdown !== 'string') break
+      savedMarkdown = payload.markdown
+      sendDirtyState(true)
+      break
+    }
     case 'unsafeEmphasisResponse': {
       const payload = message.payload as { action?: unknown }
       if (message.requestId && (payload?.action === 'literal' || payload?.action === 'html')) {

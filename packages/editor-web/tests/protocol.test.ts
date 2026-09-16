@@ -57,4 +57,14 @@ describe('editor protocol validation', () => {
       payload: { documentType: 'plainText' },
     })).toBe(true)
   })
+
+  it('accepts the saved-content baseline used by undo-aware dirty state', () => {
+    expect(isHostMessage({
+      protocolVersion,
+      type: 'markSaved',
+      documentId: 'document-id',
+      revision: 4,
+      payload: { markdown: '# Saved' },
+    })).toBe(true)
+  })
 })

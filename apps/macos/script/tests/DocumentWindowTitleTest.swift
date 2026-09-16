@@ -8,6 +8,46 @@ func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 
 expect(
+    DocumentWindowTitle.base(fileName: nil, untitledLabel: "未命名") == "未命名",
+    "untitled documents should use the localized base title"
+)
+expect(
+    DocumentWindowTitle.statusMarker(
+        isDirty: false,
+        isReadOnly: true,
+        modifiedLabel: "已修改",
+        readOnlyLabel: "只读"
+    ) == DocumentWindowTitle.StatusMarker(text: "只读", isVisible: true),
+    "read-only documents should show the read-only marker"
+)
+expect(
+    DocumentWindowTitle.statusMarker(
+        isDirty: true,
+        isReadOnly: false,
+        modifiedLabel: "已修改",
+        readOnlyLabel: "只读"
+    ) == DocumentWindowTitle.StatusMarker(text: "已修改", isVisible: true),
+    "modified documents should show the modified marker"
+)
+expect(
+    DocumentWindowTitle.statusMarker(
+        isDirty: true,
+        isReadOnly: true,
+        modifiedLabel: "已修改",
+        readOnlyLabel: "只读"
+    ) == DocumentWindowTitle.StatusMarker(text: "只读", isVisible: true),
+    "read-only status should take priority over modified status"
+)
+expect(
+    DocumentWindowTitle.statusMarker(
+        isDirty: false,
+        isReadOnly: false,
+        modifiedLabel: "已修改",
+        readOnlyLabel: "只读"
+    ) == DocumentWindowTitle.StatusMarker(text: "已修改", isVisible: false),
+    "saved writable documents should hide the status marker"
+)
+expect(
     DocumentWindowTitle.format(
         fileName: "笔记.md",
         isDirty: false,
