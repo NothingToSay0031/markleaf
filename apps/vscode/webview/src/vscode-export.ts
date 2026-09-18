@@ -1,4 +1,5 @@
-import { createEditor, escapeHtml, generateExportHtml } from '@markleaf/editor-core'
+import { createEditor } from '@markleaf/editor-core'
+import { escapeHtml, generateExportHtml } from '@markleaf/editor-core/export'
 import { styles, resolveTypography, stylesGlobPrefix } from './vscode-styles'
 import type { ExportHtmlResult, ExportOptions } from './vscode-export-options'
 import { exportStrings } from './vscode-export-strings'

@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Drawing;
 using MarkLeaf.Documents;
 using MarkLeaf.Editor;
+using MarkLeaf.Native;
 using MarkLeaf.Services;
 using MarkLeaf.Services.Settings;
 using MarkLeaf.Services.Styles;
@@ -26,6 +27,8 @@ internal sealed partial class MainForm
             AllowExternalDrop = true,
         };
         _webView = webView;
+        _webViewMouseCaptureFilter = new WebViewMouseCaptureFilter(this, webView);
+        Application.AddMessageFilter(_webViewMouseCaptureFilter);
         webView.Enter += (_, _) =>
         {
             _documentTabBar.ClearKeyboardMenuMode();
@@ -33,6 +36,14 @@ internal sealed partial class MainForm
         webView.MouseDown += (_, eventArgs) =>
         {
             _documentTabBar.ClearKeyboardMenuMode();
+        };
+        webView.Disposed += (_, _) =>
+        {
+            if (_webViewMouseCaptureFilter is not null)
+            {
+                Application.RemoveMessageFilter(_webViewMouseCaptureFilter);
+                _webViewMouseCaptureFilter = null;
+            }
         };
         var loadingView = new EditorLoadingView { Visible = false };
         _editorLoadingView = loadingView;
@@ -72,6 +83,7 @@ internal sealed partial class MainForm
         _editorHost.DocumentLoaded += (_, _) => ContinueEditorSmokeAfterLoad();
         _editorHost.DocumentLoaded += (_, _) => BeginEditorCommandSmokeIfRequested();
         _editorHost.DocumentLoaded += async (_, _) => await ContinueDocumentSmokeAfterLoadAsync();
+        _editorHost.DocumentLoaded += async (_, _) => await BeginCommandLineExportIfRequestedAsync();
         _editorHost.DocumentLoaded += (_, message) =>
         {
             if (_pendingEditorRevealDocumentId is { } pendingId
@@ -387,4 +399,42 @@ internal sealed partial class MainForm
         BeginInvoke(Close);
     }
 
+}
+
+internal sealed class WebViewMouseCaptureFilter : IMessageFilter
+{
+    private const int WmLButtonDown = 0x0201;
+    private const int WmLButtonUp = 0x0202;
+    private const int WmCancelMode = 0x001F;
+    private readonly Form _form;
+    private readonly WebView2 _webView;
+
+    public WebViewMouseCaptureFilter(Form form, WebView2 webView)
+    {
+        _form = form;
+        _webView = webView;
+    }
+
+    public bool PreFilterMessage(ref Message message)
+    {
+        if (_webView.IsDisposed || !_webView.IsHandleCreated)
+            return false;
+
+        if (message.Msg == WmLButtonDown
+            && NativeMethods.GetForegroundWindow() == _form.Handle
+            && IsWebViewWindow(message.HWnd))
+        {
+            NativeMethods.SetCapture(message.HWnd);
+        }
+        else if ((message.Msg == WmLButtonUp || message.Msg == WmCancelMode)
+            && IsWebViewWindow(NativeMethods.GetCapture()))
+        {
+            NativeMethods.ReleaseCapture();
+        }
+
+        return false;
+    }
+
+    private bool IsWebViewWindow(nint window)
+        => window == _webView.Handle || NativeMethods.IsChild(_webView.Handle, window);
 }

@@ -885,6 +885,15 @@ internal sealed partial class MainForm
 
     private async void OnMainFormClosing(object? sender, FormClosingEventArgs eventArgs)
     {
+        if (_options.IsExportCommand)
+        {
+            _closeApproved = true;
+            Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnSystemPreferenceChanged;
+            StopWatchingDocument();
+            _recoveryTimer.Stop();
+            return;
+        }
+
         if (_editorFullScreen)
         {
             ToggleEditorFullScreen();
@@ -1289,18 +1298,15 @@ internal sealed partial class MainForm
         {
             name += Loc.Get("document.readOnlySuffix");
         }
-        if (_document is null)
-        {
-            Text = "MarkLeaf";
-        }
-        else if (_settings.File.AutoSaveEnabled && _document.FilePath is not null)
-        {
-            Text = Loc.Format("document.autoSaveTitle", name);
-        }
-        else
-        {
-            Text = $"{(_document.IsDirty ? "*" : string.Empty)}{name} - MarkLeaf";
-        }
+        var documentName = _document?.IsDirty == true ? $"● {name}" : name;
+        Text = _document is null
+            ? "MarkLeaf"
+            : _settings.Appearance.TitleBarTextStyle switch
+            {
+                TitleBarTextStyle.AppName => "MarkLeaf",
+                TitleBarTextStyle.FileName => documentName,
+                _ => $"{documentName} - MarkLeaf",
+            };
 
         _menuService.RefreshStates();
     }

@@ -123,6 +123,20 @@ internal sealed partial class MainForm
             NativeMethods.SwpNoMove | NativeMethods.SwpNoSize
             | NativeMethods.SwpNoZOrder | NativeMethods.SwpFrameChanged);
         NativeMethods.DrawMenuBar(Handle);
+
+        ApplyThemeTitleBarColor();
+    }
+
+    private void ApplyThemeTitleBarColor()
+    {
+        Color? titleBarColor = null;
+        if (_settings.Appearance.UseThemeTitleBarColor)
+        {
+            var colorName = _focusMode ? "bg-primary" : "bg-secondary";
+            if (ColorThemeService.GetActiveColors().TryGetValue(colorName, out var themeColor))
+                titleBarColor = themeColor;
+        }
+        DarkModeService.SetWindowTitleBarColor(this, titleBarColor);
     }
 
     private void OnSystemPreferenceChanged(object sender, Microsoft.Win32.UserPreferenceChangedEventArgs e)
@@ -532,6 +546,7 @@ internal sealed partial class MainForm
             _documentTabBar.SetDisplaySuppressed(true);
             if (_statusStrip is not null) _statusStrip.Visible = false;
             _focusMode = true;
+            ApplyThemeTitleBarColor();
             ApplyMenuPresentation();
             ApplyBlockHandleVisibility();
             SetStatus(Loc.Get("status.focusModeOn"));
@@ -539,6 +554,7 @@ internal sealed partial class MainForm
         }
 
         _focusMode = false;
+        ApplyThemeTitleBarColor();
         ApplyBlockHandleVisibility();
         ApplyMenuPresentation();
         if (!IsDisposed)

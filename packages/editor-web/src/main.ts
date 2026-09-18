@@ -45,8 +45,6 @@ import {
   setMermaidStrings,
   SourceEditor,
   type UnsafeEmphasisRequest,
-  generateExportHtml as generateSharedExportHtml,
-  escapeHtml as escapeExportHtml,
   isPlainTextDocumentType,
   type DocumentType,
   preserveViewportDuringLayoutChange,
@@ -77,6 +75,7 @@ const sourceMount = document.querySelector<HTMLElement>('#source-editor')!
 const sourceToggle = document.querySelector<HTMLButtonElement>('#source-toggle')!
 
 const hostCapabilities = resolveNativeCapabilities(window.chrome?.webview?.hostPlatform)
+document.documentElement.classList.toggle('markleaf-host-macos', window.chrome?.webview?.hostPlatform === 'macOS')
 document.documentElement.classList.toggle(
   'markleaf-themed-visual-selection',
   hostCapabilities.usesThemedVisualSelection,
@@ -810,7 +809,9 @@ function attachFormatCommand(button: HTMLButtonElement, command: string): void {
       sendEditorState()
       return
     }
-    executeEditorCommand(editor, command)
+    const applyToBlock = command === 'toggleBold' || command === 'toggleItalic'
+      || command === 'toggleUnderline' || command === 'toggleStrike' || command === 'toggleHighlight'
+    executeEditorCommand(editor, command, undefined, undefined, applyToBlock)
     hideFormatMenu()
     sendEditorState()
   })
@@ -924,7 +925,9 @@ function showFormatMenu(
   for (const button of [...formatButtonElements, ...headingButtonElements]) {
     const action = state.actions[button.dataset.command ?? '']
     button.classList.toggle('format-menu-button-active', action?.checked === true)
-    button.disabled = action?.enabled !== true
+    // Keep the toolbar clickable when a host supplies an older/incomplete
+    // command-state payload; only an explicitly disabled action is disabled.
+    button.disabled = action?.enabled === false
   }
   const isHeading = state.headingLevel !== null
   formatSeparator.hidden = !isHeading
@@ -1429,11 +1432,12 @@ async function handleMessage(value: unknown): Promise<void> {
             const title = typeof options.title === 'string' ? options.title : ''
             const keepTablesTogether = options.keepTablesTogether === true
             const keepHeadingsWithNextBlock = options.keepHeadingsWithNextBlock === true
+            const { escapeHtml: escapeExportHtml, generateExportHtml } = await import('@markleaf/editor-core/export')
             const rawBodyHtml = sourceMode
               ? `<pre><code>${escapeExportHtml(sourceEditor?.getText() ?? '')}</code></pre>`
               : editor.getHTML()
             const resolved = resolveStyle(style)
-            const html = await generateSharedExportHtml({
+            const html = await generateExportHtml({
               rawBodyHtml,
               resolved,
               format,

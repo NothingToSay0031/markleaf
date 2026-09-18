@@ -17,6 +17,10 @@ internal sealed record LaunchOptions(
     string? DocumentSmokeReportPath,
     string? InitialDocumentPath,
     string? DocumentStatePath,
+    string? ExportConfigPath,
+    string? ExportInputPath,
+    string? ExportOutputPath,
+    bool IsExportCommand,
     int? InitialWindowLeft,
     int? InitialWindowTop,
     int? InitialWindowWidth,
@@ -42,14 +46,26 @@ internal sealed record LaunchOptions(
         string? documentSmokeReportPath = null;
         string? initialDocumentPath = null;
         string? documentStatePath = null;
+        string? exportConfigPath = null;
+        string? exportInputPath = null;
+        string? exportOutputPath = null;
         int? initialWindowLeft = null;
         int? initialWindowTop = null;
         int? initialWindowWidth = null;
         int? initialWindowHeight = null;
-        bool smokeCrashExit = false;
-        bool isolatedFileWindow = false;
+        // Boolean switches do not consume a following value and may legally be
+        // the final argument. Read them independently from the value-pair loop.
+        bool smokeCrashExit = args.Contains("--smoke-crash-exit", StringComparer.Ordinal);
+        bool isolatedFileWindow = args.Contains("--isolated-file-window", StringComparer.Ordinal);
+        var isExportCommand = args.Length > 0 && string.Equals(args[0], "export", StringComparison.OrdinalIgnoreCase);
 
-        for (var index = 0; index < args.Length - 1; index++)
+        var startIndex = isExportCommand ? 1 : 0;
+        if (isExportCommand && startIndex < args.Length && !args[startIndex].StartsWith("-", StringComparison.Ordinal))
+        {
+            exportInputPath = Path.GetFullPath(args[startIndex++]);
+        }
+
+        for (var index = startIndex; index < args.Length - 1; index++)
         {
             switch (args[index])
             {
@@ -103,6 +119,17 @@ internal sealed record LaunchOptions(
                 case "--open-document-state":
                     documentStatePath = Path.GetFullPath(args[++index]);
                     break;
+                case "--export-config":
+                case "--config" when index > 0 && string.Equals(args[0], "export", StringComparison.OrdinalIgnoreCase):
+                    if (index + 1 < args.Length) exportConfigPath = Path.GetFullPath(args[++index]);
+                    break;
+                case "-c":
+                    if (isExportCommand && index + 1 < args.Length) exportConfigPath = Path.GetFullPath(args[++index]);
+                    break;
+                case "--output":
+                case "-o":
+                    if (isExportCommand && index + 1 < args.Length) exportOutputPath = Path.GetFullPath(args[++index]);
+                    break;
                 case "--window-left" when int.TryParse(args[index + 1], out var windowLeft):
                     initialWindowLeft = windowLeft;
                     index++;
@@ -145,6 +172,10 @@ internal sealed record LaunchOptions(
             documentSmokeReportPath,
             initialDocumentPath,
             documentStatePath,
+            exportConfigPath,
+            exportInputPath,
+            exportOutputPath,
+            isExportCommand || exportConfigPath is not null,
             initialWindowLeft,
             initialWindowTop,
             initialWindowWidth,

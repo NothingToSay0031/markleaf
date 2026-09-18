@@ -293,7 +293,9 @@
 }
 
 .markleaf-document table {
-  width: 100%;
+  width: max-content;
+  max-width: 100%;
+  table-layout: auto;
   border-collapse: collapse;
   border-color: var(--ml-table-border, var(--ml-separator, var(--bg-selected-hover)));
   line-height: calc(var(--ml-line-height) * 0.8875);
@@ -306,6 +308,13 @@
   text-align: left;
   vertical-align: middle;
   border: 1px solid var(--ml-table-border, var(--ml-separator, var(--bg-selected-hover)));
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.markleaf-document th > *,
+.markleaf-document td > * {
+  max-width: 100%;
 }
 
 .markleaf-document th[style*="text-align: center"],

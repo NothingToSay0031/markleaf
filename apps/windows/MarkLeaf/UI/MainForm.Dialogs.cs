@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Net;
+using MarkLeaf.App;
 using MarkLeaf.Commands;
 using MarkLeaf.Documents;
 using MarkLeaf.Editor;
@@ -438,6 +439,148 @@ internal sealed partial class MainForm
             ShowMessage(this, Loc.Get("export.failed") + "\r\n\r\n" + exception.Message, "MarkLeaf",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private async Task RunCommandLineExportAsync()
+    {
+        try
+        {
+            var config = string.IsNullOrWhiteSpace(_options.ExportConfigPath)
+                ? null
+                : await CommandLineExportOptions.LoadAsync(_options.ExportConfigPath);
+            var configDirectory = string.IsNullOrWhiteSpace(_options.ExportConfigPath)
+                ? null
+                : Path.GetDirectoryName(_options.ExportConfigPath);
+            var requestedFormat = config?.Format ?? _settings.Export.Format;
+            var format = requestedFormat.Trim().ToLowerInvariant() switch
+            {
+                "pdf" => "pdf",
+                "html" => "html",
+                "png" or "jpg" or "image" => "image",
+                _ => throw new InvalidDataException("format must be pdf, html, png or jpg"),
+            };
+            var input = _options.ExportInputPath is not null
+                ? CommandLineExportOptions.ResolvePath(_options.ExportInputPath)
+                : config?.Input is not null
+                    ? CommandLineExportOptions.ResolvePath(config.Input, configDirectory)
+                    : CommandLineExportOptions.ResolvePath(_document?.FilePath
+                        ?? throw new InvalidDataException("Export input is required."));
+            var imageFormat = requestedFormat.Equals("jpg", StringComparison.OrdinalIgnoreCase)
+                ? "jpg"
+                : config?.Image.Format ?? _settings.Export.ImageFormat;
+            var extension = format == "pdf" ? ".pdf" : format == "html" ? ".html" : imageFormat == "jpg" ? ".jpg" : ".png";
+            var requestedOutput = _options.ExportOutputPath is not null
+                ? CommandLineExportOptions.ResolvePath(_options.ExportOutputPath)
+                : config?.Output is not null
+                    ? CommandLineExportOptions.ResolvePath(config.Output, configDirectory)
+                    : null;
+            var output = ResolveCommandLineExportOutput(input, requestedOutput, extension);
+            if (!(config?.Overwrite ?? false) && File.Exists(output)) throw new IOException("Output file already exists.");
+            var export = config is null
+                ? BuildLastExportOptions(output)
+                : new ExportOptions(
+                    format, config.Paper.Size, string.Equals(config.Paper.Orientation, "landscape", StringComparison.OrdinalIgnoreCase),
+                    config.Paper.Margin.Top, config.Paper.Margin.Bottom, config.Paper.Margin.Left, config.Paper.Margin.Right,
+                    config.Html.Header, config.Html.Footer, config.Header.Text, config.Header.Alignment,
+                    config.Footer.Text, config.Footer.Alignment, "", "", "", "", config.Style ?? _markdownStyle,
+                    config.ColorScheme ?? _colorTheme, config.Layout.KeepTablesTogether, config.Layout.KeepHeadingsWithNextBlock,
+                    Math.Clamp(config.Image.MaxHeight, 1000, 30000), Math.Clamp(config.Image.ContentWidth, 320, 4000),
+                    float.IsFinite(config.Image.Scale) ? Math.Clamp(config.Image.Scale, 1f, 4f) : 2f,
+                    imageFormat, Math.Clamp(config.Image.JpegQuality, 1, 100), output);
+            var title = string.IsNullOrWhiteSpace(config?.Html.Title)
+                ? Path.GetFileNameWithoutExtension(_document?.FilePath ?? output)
+                : config.Html.Title;
+            var success = await RunExportCoreAsync(export, title);
+            var report = new { success, input, output, format, warnings = Array.Empty<string>() };
+            if (!string.IsNullOrWhiteSpace(config?.Report))
+            {
+                var reportPath = CommandLineExportOptions.ResolvePath(config.Report, configDirectory);
+                Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
+                await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            Environment.ExitCode = success ? 0 : 5;
+        }
+        catch (Exception exception)
+        {
+            _logger.Error("Command-line export failed.", exception);
+            Environment.ExitCode = exception is InvalidDataException ? 1 : 5;
+        }
+        finally
+        {
+            _commandLineExportCompleted = true;
+            BeginInvoke(Close);
+        }
+    }
+
+    private static string ResolveCommandLineExportOutput(string input, string? requestedOutput, string extension)
+    {
+        if (string.IsNullOrWhiteSpace(requestedOutput))
+            return Path.Combine(Path.GetDirectoryName(input)!, Path.GetFileNameWithoutExtension(input) + extension);
+
+        var output = Path.GetFullPath(requestedOutput);
+        if (Directory.Exists(output) || Path.EndsInDirectorySeparator(requestedOutput))
+            return Path.Combine(output, Path.GetFileNameWithoutExtension(input) + extension);
+        return Path.HasExtension(output) ? output : Path.ChangeExtension(output, extension);
+    }
+
+    private async Task WatchCommandLineExportTimeoutAsync()
+    {
+        var seconds = 120;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(_options.ExportConfigPath))
+            {
+                var config = await CommandLineExportOptions.LoadAsync(_options.ExportConfigPath);
+                seconds = Math.Clamp(config.Runtime.TimeoutSeconds, 10, 1800);
+            }
+        }
+        catch
+        {
+            // Configuration errors are handled by the normal export path.
+        }
+        await Task.Delay(TimeSpan.FromSeconds(seconds));
+        if (_commandLineExportCompleted || IsDisposed) return;
+        _logger.Warning($"Command-line export timed out after {seconds} seconds.");
+        Environment.ExitCode = 7;
+        _commandLineExportCompleted = true;
+        if (IsHandleCreated) BeginInvoke(Close);
+    }
+
+    private async Task BeginCommandLineExportIfRequestedAsync()
+    {
+        if (_commandLineExportStarted || !_options.IsExportCommand || _editorHost?.IsDocumentLoaded != true)
+            return;
+        _commandLineExportStarted = true;
+        await RunCommandLineExportAsync();
+    }
+
+    private async Task<bool> RunExportCoreAsync(ExportOptions options, string defaultName)
+    {
+        var exportDir = Path.GetDirectoryName(options.OutputPath);
+        if (!string.IsNullOrWhiteSpace(exportDir)) Directory.CreateDirectory(exportDir);
+        var editor = _settings.Editor;
+        var exportWidth = options.Format == "image" ? options.ImageContentWidth : editor.VisualMaxContentWidth;
+        var html = await _editorHost!.RequestExportAsync(options.Format, options.Style, options.HtmlHeader, options.HtmlFooter,
+            editor.VisualFontSize, editor.VisualLineHeight, exportWidth, editor.VisualCjkAutoSpacing,
+            ColorThemeService.GetThemeCss(options.ColorScheme), defaultName, options.KeepTablesTogether, options.KeepHeadingsWithNextBlock);
+        if (string.IsNullOrEmpty(html)) return false;
+        html = EmbedExportImages(html, _document?.FilePath);
+        var output = options.OutputPath;
+        if (!Path.HasExtension(output)) output = Path.ChangeExtension(output, options.Format == "pdf" ? ".pdf" : options.Format == "image" ? (options.ImageFormat == "jpg" ? ".jpg" : ".png") : ".html");
+        if (options.Format == "pdf")
+        {
+            var bytes = await _editorHost.PrintExportToPdfAsync(html, options.PaperSize, options.Landscape, options.MarginTop, options.MarginBottom, options.MarginLeft, options.MarginRight,
+                ResolvePdfHeaderFooterPlaceholders(options.PdfHeaderText, defaultName), options.PdfHeaderAlignment,
+                ResolvePdfHeaderFooterPlaceholders(options.PdfFooterText, defaultName), options.PdfFooterAlignment, ResolveHeaderFooterFontFamily(options.Style));
+            await File.WriteAllBytesAsync(output, bytes);
+        }
+        else if (options.Format == "image")
+        {
+            var paths = await _editorHost.CaptureExportImagesAsync(html, output, options.ImageContentWidth, options.ImageMaxHeight, options.ImageScale, options.ImageFormat, options.ImageJpegQuality);
+            if (paths.Count == 0) return false;
+        }
+        else await File.WriteAllTextAsync(output, html, System.Text.Encoding.UTF8);
+        return true;
     }
 
     private void PrintDocument()

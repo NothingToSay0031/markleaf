@@ -254,6 +254,16 @@ body.markleaf-theme-dark {
 }
 
 /* 数学公式（KaTeX 渲染） */
+.markleaf-math-inline {
+  font-size: 1em;
+}
+
+/* KaTeX 默认把根节点放大到 1.21em；行内公式应严格以所在行的
+   继承字号为基准，因此在行内容器中取消这层额外放大。 */
+.markleaf-math-inline > .katex {
+  font-size: 1em;
+}
+
 .markleaf-math-block {
   margin: 1em 0;
   text-align: center;
@@ -375,7 +385,7 @@ body.markleaf-theme-dark {
   display: none;
   width: 18px;
   height: 18px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets", sans-serif;
   font-size: 14px;
   line-height: 18px;
 }
@@ -396,6 +406,12 @@ body.markleaf-theme-dark {
   width: 8px;
   height: 1em;
 }
+
+.markleaf-document pre:hover .markleaf-code-block-language-empty,
+.markleaf-document pre:focus-within .markleaf-code-block-language-empty { width: auto; }
+.markleaf-code-block-language-empty::after { content: attr(data-placeholder); display: none; }
+.markleaf-document pre:hover .markleaf-code-block-language-empty::after,
+.markleaf-document pre:focus-within .markleaf-code-block-language-empty::after { display: inline; }
 
 .markleaf-code-block-copy:hover,
 .markleaf-code-block-language:hover {
@@ -678,17 +694,6 @@ html.markleaf-auto-hide-scrollbar .cm-scroller::-webkit-scrollbar {
   height: 8px;
 }
 
-html.markleaf-auto-hide-scrollbar,
-body.markleaf-auto-hide-scrollbar,
-html.markleaf-auto-hide-scrollbar .cm-scroller {
-  scrollbar-color: color-mix(
-    in srgb,
-    var(--scrollbar-active, rgba(0, 0, 0, 0.35))
-    calc(var(--ml-scrollbar-alpha, 0) * 100%),
-    transparent
-  ) transparent;
-}
-
 html.markleaf-auto-hide-scrollbar .cm-scroller {
   scrollbar-width: none;
 }
@@ -774,7 +779,7 @@ html.markleaf-auto-hide-scrollbar .cm-scroller::-webkit-scrollbar-thumb {
   border: none;
   background: transparent;
   color: #24292f;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets", -apple-system, BlinkMacSystemFont, "SF Pro", sans-serif;
   font-size: 14px;
   line-height: 1;
   display: inline-flex;

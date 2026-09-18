@@ -6,7 +6,7 @@ import { exportDefaults, isExportOptions } from '../src/vscode-export-options'
 import { exportStrings } from '../src/vscode-export-strings'
 import { isWebviewMessage } from '../src/vscode-protocol'
 import { createExportDialog } from '../src/vscode-export-dialog'
-import { generateExportHtml } from '@markleaf/editor-core'
+import { generateExportHtml } from '@markleaf/editor-core/export'
 
 // This suite checks document generation, not browser rasterization or printing.
 afterEach(() => { document.body.innerHTML = ''; setImageResourceResolver(); vi.restoreAllMocks() })

@@ -33,6 +33,13 @@ public enum MenuBarStyle
     TabBar,
 }
 
+public enum TitleBarTextStyle
+{
+    FileNameAndAppName,
+    AppName,
+    FileName,
+}
+
 public enum CjkLanguageTag
 {
     SimplifiedChinese,
@@ -200,6 +207,10 @@ public sealed class AppearanceSettings
     public bool CtrlWheelZoom { get; set; } = true;
 
     public bool TopMostWindow { get; set; }
+
+    public bool UseThemeTitleBarColor { get; set; }
+
+    public TitleBarTextStyle TitleBarTextStyle { get; set; } = TitleBarTextStyle.FileNameAndAppName;
 
     public bool AutoHideScrollbars { get; set; } = true;
 

@@ -68,8 +68,10 @@ export function sharedRendererDistribution() {
     apply: 'build' as const,
     config() {
       return { build: { rollupOptions: {
-        external: ['@markleaf/editor-core'],
-        output: { paths: { '@markleaf/editor-core': '../kernel/editor-core.js' } },
+        external: /^@markleaf\/editor-core(?:\/.*)?$/,
+        output: { paths: (id: string) => id === '@markleaf/editor-core/export'
+            ? '../kernel/export-html.js'
+            : '../kernel/editor-core.js' },
       } } }
     },
     configResolved(config: { root: string; build: { outDir: string } }) {

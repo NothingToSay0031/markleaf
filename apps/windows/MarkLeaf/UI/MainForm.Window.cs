@@ -30,10 +30,11 @@ internal sealed partial class MainForm
                 startInfo.ArgumentList.Add("--open-document-state");
                 startInfo.ArgumentList.Add(Path.GetFullPath(documentStatePath));
             }
-            else if (string.IsNullOrWhiteSpace(documentPath))
+            else
             {
-                // An in-app blank window must not restore the previous
-                // workspace or document tabs, regardless of startup settings.
+                // Windows created explicitly from the app (blank or with one
+                // requested document) must not restore the previous workspace
+                // or document tabs, regardless of startup settings.
                 startInfo.ArgumentList.Add("--isolated-file-window");
             }
             if (location is { } windowLocation)

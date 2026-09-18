@@ -15,6 +15,9 @@ namespace MarkLeaf.Editor;
 
 internal sealed class EditorHostController : IDisposable
 {
+    private static readonly object EnvironmentLock = new();
+    private static readonly Dictionary<string, Task<CoreWebView2Environment>> EnvironmentTasks =
+        new(StringComparer.OrdinalIgnoreCase);
     private readonly WebView2 _webView;
     private readonly EditorLoadingView _loadingView;
     private readonly EditorSession _session;
@@ -116,6 +119,27 @@ internal sealed class EditorHostController : IDisposable
 
     public bool IsDocumentLoaded => IsReady && _documentLoaded;
 
+    public static Task PrewarmEnvironmentAsync(string userDataDirectory)
+        => GetEnvironmentAsync(userDataDirectory);
+
+    private static Task<CoreWebView2Environment> GetEnvironmentAsync(string userDataDirectory)
+    {
+        var fullPath = Path.GetFullPath(userDataDirectory);
+        lock (EnvironmentLock)
+        {
+            if (!EnvironmentTasks.TryGetValue(fullPath, out var task)
+                || task.IsCanceled
+                || task.IsFaulted)
+            {
+                Directory.CreateDirectory(fullPath);
+                task = CoreWebView2Environment.CreateAsync(userDataFolder: fullPath);
+                EnvironmentTasks[fullPath] = task;
+            }
+
+            return task;
+        }
+    }
+
     public Point EditorPointToScreen(EditorContextMenuRequest request)
     {
         // 前端格式菜单占据右键位置上方一段高度，原生菜单需在其下方偏移 menuHeight + 10px 间距。
@@ -160,9 +184,8 @@ internal sealed class EditorHostController : IDisposable
         try
         {
             _initializationCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-            Directory.CreateDirectory(_webView2UserDataDirectory);
-            var environment = await CoreWebView2Environment.CreateAsync(
-                userDataFolder: _webView2UserDataDirectory).WaitAsync(_initializationCancellation.Token);
+            var environment = await GetEnvironmentAsync(_webView2UserDataDirectory)
+                .WaitAsync(_initializationCancellation.Token);
             var controllerOptions = environment.CreateCoreWebView2ControllerOptions();
             controllerOptions.AllowHostInputProcessing = true;
             var themeColors = ColorThemeService.GetActiveColors();

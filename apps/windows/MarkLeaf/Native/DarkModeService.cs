@@ -4,6 +4,9 @@ namespace MarkLeaf.Native;
 
 internal static class DarkModeService
 {
+    private static readonly List<WeakReference<Form>> Windows = [];
+    private static bool _dark;
+    private static Color? _titleBarColor;
     private const int PreferredAppModeDefault = 0;
     private const int PreferredAppModeAllowDark = 1;
     private const int PreferredAppModeForceDark = 2;
@@ -37,6 +40,7 @@ internal static class DarkModeService
             SetPreferredAppMode(PreferredAppModeForceLight);
             FlushMenuThemes();
             _available = true;
+            Application.Idle += (_, _) => RegisterOpenWindows();
         }
         catch (EntryPointNotFoundException)
         {
@@ -46,21 +50,24 @@ internal static class DarkModeService
 
     public static void Apply(bool dark)
     {
-        if (!_available) return;
-
-        try
+        _dark = dark;
+        if (_available)
         {
-            SetPreferredAppMode(dark ? PreferredAppModeForceDark : PreferredAppModeForceLight);
-            FlushMenuThemes();
-            RefreshImmersiveColorPolicyState();
-        }
-        catch (EntryPointNotFoundException)
-        {
-            _available = false;
+            try
+            {
+                SetPreferredAppMode(dark ? PreferredAppModeForceDark : PreferredAppModeForceLight);
+                FlushMenuThemes();
+                RefreshImmersiveColorPolicyState();
+            }
+            catch (EntryPointNotFoundException)
+            {
+                _available = false;
+            }
         }
 
         // .NET 9+ 实验性 API：为 WinForms 标准控件开启深色模式。
         Application.SetColorMode(dark ? SystemColorMode.Dark : SystemColorMode.Classic);
+        RefreshTitleBars();
     }
 
     /// <summary>
@@ -125,19 +132,62 @@ internal static class DarkModeService
     }
 
     /// <summary>
-    /// 为窗口设置深色标题栏（DWM 沉浸式深色模式）。
+    /// 设置窗口标题栏颜色，并将窗口纳入主题变化时的统一刷新范围。
     /// </summary>
-    public static void SetWindowDarkTitleBar(Form form)
+    public static void SetWindowTitleBarColor(Form form, Color? color)
+    {
+        _titleBarColor = color;
+        RegisterWindow(form);
+        RefreshTitleBars();
+    }
+
+    public static void RegisterWindow(Form form)
+    {
+        if (!Windows.Any(reference => reference.TryGetTarget(out var target) && ReferenceEquals(target, form)))
+            Windows.Add(new WeakReference<Form>(form));
+        ApplyTitleBar(form);
+    }
+
+    private static void RefreshTitleBars()
+    {
+        RegisterOpenWindows();
+
+        for (var i = Windows.Count - 1; i >= 0; i--)
+        {
+            if (!Windows[i].TryGetTarget(out var form) || form.IsDisposed)
+                Windows.RemoveAt(i);
+            else
+                ApplyTitleBar(form);
+        }
+    }
+
+    private static void RegisterOpenWindows()
+    {
+        foreach (Form form in Application.OpenForms)
+        {
+            if (Windows.Any(reference => reference.TryGetTarget(out var target) && ReferenceEquals(target, form)))
+                continue;
+            Windows.Add(new WeakReference<Form>(form));
+            ApplyTitleBar(form);
+        }
+    }
+
+    private static void ApplyTitleBar(Form form)
     {
         if (!form.IsHandleCreated) return;
-        var value = 1;
-        NativeMethods.DwmSetWindowAttribute(
-            form.Handle,
-            NativeMethods.DwmwaUseImmersiveDarkMode,
-            ref value,
-            sizeof(int));
+        var colorValue = _titleBarColor is null
+            ? -1
+            : _titleBarColor.Value.R | (_titleBarColor.Value.G << 8) | (_titleBarColor.Value.B << 16);
+        NativeMethods.DwmSetWindowAttribute(form.Handle, NativeMethods.DwmwaCaptionColor, ref colorValue, sizeof(int));
+        var darkValue = _dark ? 1 : 0;
+        NativeMethods.DwmSetWindowAttribute(form.Handle, NativeMethods.DwmwaUseImmersiveDarkMode, ref darkValue, sizeof(int));
         NativeMethods.SetWindowPos(form.Handle, 0, 0, 0, 0, 0,
             NativeMethods.SwpNoMove | NativeMethods.SwpNoSize
             | NativeMethods.SwpNoZOrder | NativeMethods.SwpFrameChanged);
+    }
+
+    public static void SetWindowDarkTitleBar(Form form)
+    {
+        RegisterWindow(form);
     }
 }

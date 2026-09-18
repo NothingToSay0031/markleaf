@@ -72,6 +72,23 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool SetForegroundWindow(nint window);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern nint SetCapture(nint window);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    internal static extern nint GetCapture();
+
+    [DllImport("user32.dll")]
+    internal static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool IsChild(nint parent, nint child);
+
     [DllImport("user32.dll")]
     internal static extern nint PostMessage(nint window, uint message, nuint wParam, nint lParam);
 
@@ -107,6 +124,7 @@ internal static class NativeMethods
 
     // ---- 深色标题栏 ----
     public const int DwmwaUseImmersiveDarkMode = 20;
+    public const int DwmwaCaptionColor = 35;
 
     [DllImport("dwmapi.dll", SetLastError = true)]
     public static extern int DwmSetWindowAttribute(nint hwnd, int attr, ref int attrValue, int attrSize);

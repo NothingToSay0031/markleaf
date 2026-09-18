@@ -111,6 +111,9 @@ internal sealed class PreferencesDialog : Form
     private readonly CheckBox _restoreZoomCheck;
     private readonly CheckBox _ctrlWheelZoomCheck;
     private readonly CheckBox _topMostCheck;
+    private readonly CheckBox _useThemeTitleBarColorCheck;
+    private readonly ComboBox _titleBarTextStyleCombo = new()
+    { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly CheckBox _autoHideScrollbarsCheck;
     private readonly CheckBox _showCodeHighlightCheck;
     private readonly ComboBox _menuStyleCombo = new()
@@ -304,6 +307,11 @@ internal sealed class PreferencesDialog : Form
         { Text = Loc.Get("prefs.editor.ctrlWheelZoom"), AutoSize = true, FlatStyle = FlatStyle.System };
         _topMostCheck = new CheckBox
         { Text = Loc.Get("prefs.appearance.topMost"), AutoSize = true, FlatStyle = FlatStyle.System };
+        _useThemeTitleBarColorCheck = new CheckBox
+        { Text = Loc.Get("prefs.appearance.useThemeTitleBarColor"), AutoSize = true, FlatStyle = FlatStyle.System };
+        _titleBarTextStyleCombo.Items.Add(Loc.Get("prefs.appearance.titleBar.fileNameAndAppName"));
+        _titleBarTextStyleCombo.Items.Add(Loc.Get("prefs.appearance.titleBar.appName"));
+        _titleBarTextStyleCombo.Items.Add(Loc.Get("prefs.appearance.titleBar.fileName"));
         _autoHideScrollbarsCheck = new CheckBox
         { Text = Loc.Get("prefs.appearance.autoHideScrollbars"), AutoSize = true, FlatStyle = FlatStyle.System };
         _showCodeHighlightCheck = new CheckBox
@@ -899,18 +907,22 @@ internal sealed class PreferencesDialog : Form
         window.Controls.Add(BuildWindowPanel(), 1, 0);
         window.Controls.Add(Gap(), 0, 1);
         window.Controls.Add(Gap(), 1, 1);
-        window.Controls.Add(NewLabel(Loc.Get("prefs.editor.zoom.label")), 0, 2);
-        window.Controls.Add(BuildZoomPanel(), 1, 2);
+        window.Controls.Add(NewLabel(Loc.Get("prefs.appearance.titleBar.label")), 0, 2);
+        window.Controls.Add(BuildTitleBarPanel(), 1, 2);
         window.Controls.Add(Gap(), 0, 3);
         window.Controls.Add(Gap(), 1, 3);
-        window.Controls.Add(NewLabel(Loc.Get("prefs.appearance.menuStyle.label")), 0, 4);
-        window.Controls.Add(BuildMenuStylePanel(), 1, 4);
+        window.Controls.Add(NewLabel(Loc.Get("prefs.editor.zoom.label")), 0, 4);
+        window.Controls.Add(BuildZoomPanel(), 1, 4);
         window.Controls.Add(Gap(), 0, 5);
         window.Controls.Add(Gap(), 1, 5);
-        window.Controls.Add(NewLabel(Loc.Get("prefs.appearance.statusBar.label")), 0, 6);
-        window.Controls.Add(_customizeStatusBarButton, 1, 6);
-        window.Controls.Add(new Panel { Dock = DockStyle.Fill }, 0, 7);
-        window.Controls.Add(new Panel { Dock = DockStyle.Fill }, 1, 7);
+        window.Controls.Add(NewLabel(Loc.Get("prefs.appearance.menuStyle.label")), 0, 6);
+        window.Controls.Add(BuildMenuStylePanel(), 1, 6);
+        window.Controls.Add(Gap(), 0, 7);
+        window.Controls.Add(Gap(), 1, 7);
+        window.Controls.Add(NewLabel(Loc.Get("prefs.appearance.statusBar.label")), 0, 8);
+        window.Controls.Add(_customizeStatusBarButton, 1, 8);
+        window.Controls.Add(new Panel { Dock = DockStyle.Fill }, 0, 9);
+        window.Controls.Add(new Panel { Dock = DockStyle.Fill }, 1, 9);
 
         return BuildSegmentedPage(
             [Loc.Get("prefs.appearance.segment.theme"), Loc.Get("prefs.appearance.segment.window")],
@@ -969,6 +981,21 @@ internal sealed class PreferencesDialog : Form
         panel.Controls.Add(_topMostCheck, 0, 0);
         panel.Controls.Add(Gap(), 0, 1);
         panel.Controls.Add(_autoHideScrollbarsCheck, 0, 2);
+        return panel;
+    }
+
+    private Control BuildTitleBarPanel()
+    {
+        var panel = new TableLayoutPanel
+        {
+            ColumnCount = 1,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+        };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        panel.Controls.Add(_titleBarTextStyleCombo, 0, 0);
+        panel.Controls.Add(Gap(), 0, 1);
+        panel.Controls.Add(_useThemeTitleBarColorCheck, 0, 2);
         return panel;
     }
 
@@ -1292,6 +1319,10 @@ internal sealed class PreferencesDialog : Form
         _restoreZoomCheck.Checked = appearance.RestoreZoomOnOpen;
         _ctrlWheelZoomCheck.Checked = appearance.CtrlWheelZoom;
         _topMostCheck.Checked = appearance.TopMostWindow;
+        _useThemeTitleBarColorCheck.Checked = appearance.UseThemeTitleBarColor;
+        _titleBarTextStyleCombo.SelectedIndex = Enum.IsDefined(appearance.TitleBarTextStyle)
+            ? (int)appearance.TitleBarTextStyle
+            : 0;
         _autoHideScrollbarsCheck.Checked = appearance.AutoHideScrollbars;
         _showCodeHighlightCheck.Checked = appearance.ShowCodeHighlight;
         _followSystemCheck.Checked = appearance.FollowSystemColorMode;
@@ -1456,6 +1487,9 @@ internal sealed class PreferencesDialog : Form
         appearance.RestoreZoomOnOpen = _restoreZoomCheck.Checked;
         appearance.CtrlWheelZoom = _ctrlWheelZoomCheck.Checked;
         appearance.TopMostWindow = _topMostCheck.Checked;
+        appearance.UseThemeTitleBarColor = _useThemeTitleBarColorCheck.Checked;
+        if (_titleBarTextStyleCombo.SelectedIndex >= 0)
+            appearance.TitleBarTextStyle = (TitleBarTextStyle)_titleBarTextStyleCombo.SelectedIndex;
         appearance.AutoHideScrollbars = _autoHideScrollbarsCheck.Checked;
         appearance.ShowCodeHighlight = _showCodeHighlightCheck.Checked;
         appearance.FollowSystemColorMode = _followSystemCheck.Checked;
@@ -1549,6 +1583,7 @@ internal sealed class PreferencesDialog : Form
         _themeCombo.Width = comboW;
         _defaultLightThemeCombo.Width = this.ScaleForDpi(150);
         _defaultDarkThemeCombo.Width = this.ScaleForDpi(150);
+        _titleBarTextStyleCombo.Width = comboW;
         _menuStyleCombo.Width = comboW;
         _languageCombo.Width = comboW;
         _clipboardImageCombo.Width = comboW;

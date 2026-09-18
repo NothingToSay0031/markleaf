@@ -53,6 +53,7 @@ internal sealed partial class MainForm : Form
     private EditorHostController? _editorHost;
     private FindReplaceDialog? _findReplaceDialog;
     private WebView2? _webView;
+    private WebViewMouseCaptureFilter? _webViewMouseCaptureFilter;
     private MarkdownDocument? _document;
     private readonly DocumentTabBar _documentTabBar = new();
     private readonly List<MarkdownDocument> _openDocuments = [];
@@ -156,6 +157,8 @@ internal sealed partial class MainForm : Form
     private bool _editorSmokeStarted;
     private bool _editorCommandSmokeStarted;
     private bool _documentSmokeStarted;
+    private bool _commandLineExportStarted;
+    private bool _commandLineExportCompleted;
     private EditorCommandStatus _editorCommandStatus = EditorCommandStatus.Empty;
     private EditorStatus _editorStatus = EditorStatus.Empty;
     private bool _workspaceListViewActive;
@@ -278,6 +281,12 @@ internal sealed partial class MainForm : Form
         MinimumSize = new Size(900, 600);
         _expandedWindowMinimumSize = MinimumSize;
         Font = new Font("Segoe UI", 9F, FontStyle.Regular);
+        if (_options.IsExportCommand)
+        {
+            ShowInTaskbar = false;
+            Opacity = 0;
+            Location = new Point(-32000, -32000);
+        }
 
         var placement = WindowPlacementCalculator.Normalize(
             settings.MainWindow,
@@ -345,6 +354,11 @@ internal sealed partial class MainForm : Form
         Activated += (_, _) => _editorHost?.SetWindowActive(true);
         Deactivate += (_, _) =>
         {
+            if (_webView is not null
+                && _webView.IsHandleCreated
+                && (NativeMethods.GetCapture() == _webView.Handle
+                    || NativeMethods.IsChild(_webView.Handle, NativeMethods.GetCapture())))
+                NativeMethods.ReleaseCapture();
             _editorHost?.SetWindowActive(false);
         };
         FormClosing += OnMainFormClosing;
@@ -488,6 +502,8 @@ internal sealed partial class MainForm : Form
     private async Task OnMainFormShownAsync(bool maximize)
     {
         var startupTimer = Stopwatch.StartNew();
+        if (_options.IsExportCommand)
+            _ = WatchCommandLineExportTimeoutAsync();
         await Task.Yield();
         if (maximize)
         {
@@ -515,7 +531,7 @@ internal sealed partial class MainForm : Form
         await Task.WhenAll(startupTasks);
         _logger.Info($"Startup: editor and initial content ready after {startupTimer.ElapsedMilliseconds} ms.");
 
-        if (_settings.General.AutoCheckForUpdates)
+        if (!_options.IsExportCommand && _settings.General.AutoCheckForUpdates)
         {
             _ = CheckForUpdatesAsync(silent: true);
         }

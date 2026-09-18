@@ -10,6 +10,10 @@
       "types": "./src/index.ts",
       "default": "./dist/renderer/editor-core.js"
     },
+    "./export": {
+      "types": "./src/export-entry.ts",
+      "default": "./dist/renderer/export-html.js"
+    },
     "./editor-state": "./src/editor-state.ts",
     "./command-state": "./src/command-state.ts",
     "./styles.css": "./src/styles.css",

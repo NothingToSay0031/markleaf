@@ -129,6 +129,8 @@ public sealed class JsonSettingsService : ISettingsService
         settings.Editor ??= new EditorSettings();
         NormalizeEditor(settings.Editor);
         settings.Appearance ??= new AppearanceSettings();
+        if (!Enum.IsDefined(settings.Appearance.TitleBarTextStyle))
+            settings.Appearance.TitleBarTextStyle = TitleBarTextStyle.FileNameAndAppName;
         settings.Appearance.StatusBar ??= new StatusBarSettings();
         NormalizeStatusBar(settings.Appearance.StatusBar);
         settings.General ??= new GeneralSettings();

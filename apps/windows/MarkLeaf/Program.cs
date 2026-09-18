@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using MarkLeaf.App;
+using MarkLeaf.Editor;
 using MarkLeaf.Native;
 using MarkLeaf.Services;
 using MarkLeaf.Services.Logging;
@@ -17,6 +18,33 @@ internal static class Program
         ApplicationConfiguration.Initialize();
 
         var options = LaunchOptions.Parse(args);
+        if (options.IsExportCommand || !string.IsNullOrWhiteSpace(options.ExportConfigPath))
+        {
+            try
+            {
+                var exportInput = options.ExportInputPath;
+                if (string.IsNullOrWhiteSpace(exportInput) && !string.IsNullOrWhiteSpace(options.ExportConfigPath))
+                {
+                    var exportConfig = CommandLineExportOptions.LoadAsync(options.ExportConfigPath).GetAwaiter().GetResult();
+                    var configDirectory = Path.GetDirectoryName(options.ExportConfigPath);
+                    exportInput = CommandLineExportOptions.ResolvePath(exportConfig.Input, configDirectory);
+                }
+                if (string.IsNullOrWhiteSpace(exportInput)) throw new InvalidDataException("Export input is required.");
+                exportInput = CommandLineExportOptions.ResolvePath(exportInput);
+                if (!File.Exists(exportInput)) throw new FileNotFoundException("Export input was not found.", exportInput);
+                options = options with
+                {
+                    InitialDocumentPath = exportInput,
+                    IsolatedFileWindow = true,
+                };
+            }
+            catch (Exception exception)
+            {
+                Console.Error.WriteLine($"MarkLeaf export configuration failed: {exception.Message}");
+                Environment.ExitCode = 1;
+                return;
+            }
+        }
         var paths = ApplicationPaths.Create(options.SettingsRoot);
         Directory.CreateDirectory(paths.DataDirectory);
 
@@ -29,7 +57,8 @@ internal static class Program
                     try { return process.Id != currentProcessId && !process.HasExited; }
                     catch { return false; }
                 });
-            if (existingInstances == 1
+            if (!options.IsolatedFileWindow
+                && existingInstances == 1
                 && FileOpenRouter.TryForwardAsync(options.InitialDocumentPath).GetAwaiter().GetResult())
             {
                 return;
@@ -69,6 +98,11 @@ internal static class Program
 
             // 在任何窗口创建前设置进程级颜色模式，确保 HMENU 深色渲染就绪。
             DarkModeService.Initialize();
+
+            // Overlap WebView2 process/profile startup with construction of the
+            // native control tree, after the small files needed for first paint
+            // are already in memory. InitializeAsync consumes this same task.
+            _ = EditorHostController.PrewarmEnvironmentAsync(paths.WebView2UserDataDirectory);
 
             using var form = new MainForm(options, paths, settings, settingsService, logger);
             using var fileOpenRouter = FileOpenRouter.TryStartPrimary(

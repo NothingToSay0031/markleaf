@@ -210,6 +210,10 @@ export function setEditorSharedStrings(
   mermaidRenderButtonText = strings.mermaidRender
   frontMatterStrings = { ...frontMatterStrings, ...strings }
   formulaInputAssistantText = strings.formulaInputAssistant
+  for (const language of document.querySelectorAll<HTMLButtonElement>('.markleaf-code-block-language-empty')) {
+    language.dataset.placeholder = strings.declareLanguage
+    language.setAttribute('aria-label', strings.declareLanguage)
+  }
   for (const container of document.querySelectorAll<HTMLElement>('.markleaf-front-matter')) {
     const toggle = container.querySelector<HTMLButtonElement>('.markleaf-front-matter-toggle')
     const toggleError = container.querySelector<HTMLElement>('.markleaf-front-matter-toggle-error')
@@ -2174,9 +2178,9 @@ function createCodeBlockControls(editor: Editor, position: number): HTMLDivEleme
   const copy = document.createElement('button')
   copy.type = 'button'
   copy.className = 'markleaf-code-block-copy'
-  copy.textContent = '⧉'
+  copy.textContent = document.documentElement.classList.contains('markleaf-host-macos') ? '⧉' : '\uE8C8'
   copy.tabIndex = -1
-  copy.setAttribute('aria-label', 'Copy code block')
+  copy.setAttribute('aria-label', editorSharedStrings.copyCodeBlock)
 
   const language = document.createElement('button')
   language.type = 'button'
@@ -2209,6 +2213,10 @@ function createCodeBlockControls(editor: Editor, position: number): HTMLDivEleme
     ? node.attrs.language
     : ''
   language.classList.toggle('markleaf-code-block-language-empty', language.textContent.length === 0)
+  if (language.textContent.length === 0) {
+    language.dataset.placeholder = editorSharedStrings.declareLanguage
+    language.setAttribute('aria-label', editorSharedStrings.declareLanguage)
+  }
   controls.append(copy, language)
   return controls
 }
@@ -4758,6 +4766,7 @@ export function executeEditorCommand(
   command: string,
   text?: string,
   coordinates?: { left: number; top: number },
+  applyToCurrentTextBlockWhenEmpty = false,
 ): boolean {
   const expanded = executeExpandedSourceCommand(editor, command, text)
   if (expanded !== undefined) return expanded
@@ -4768,8 +4777,8 @@ export function executeEditorCommand(
     deleteSelection: () => chain.deleteSelection().run(),
     pasteText: () => typeof text === 'string' && editor.view.pasteText(text),
     pasteHtml: () => typeof text === 'string' && editor.view.pasteHTML(text),
-    toggleBold: () => toggleInlineMark(editor, 'bold'),
-    toggleItalic: () => toggleInlineMark(editor, 'italic'),
+    toggleBold: () => toggleInlineMark(editor, 'bold', applyToCurrentTextBlockWhenEmpty),
+    toggleItalic: () => toggleInlineMark(editor, 'italic', applyToCurrentTextBlockWhenEmpty),
     setLink: () => {
       if (!text || !isAllowedLink(text)) {
         return false
@@ -4834,9 +4843,9 @@ export function executeEditorCommand(
     setHeading4: () => chain.setHeading({ level: 4 }).run(),
     setHeading5: () => chain.setHeading({ level: 5 }).run(),
     setHeading6: () => chain.setHeading({ level: 6 }).run(),
-    toggleUnderline: () => toggleInlineMark(editor, 'underline'),
-    toggleStrike: () => toggleInlineMark(editor, 'strike'),
-    toggleHighlight: () => toggleInlineMark(editor, 'highlight'),
+    toggleUnderline: () => toggleInlineMark(editor, 'underline', applyToCurrentTextBlockWhenEmpty),
+    toggleStrike: () => toggleInlineMark(editor, 'strike', applyToCurrentTextBlockWhenEmpty),
+    toggleHighlight: () => toggleInlineMark(editor, 'highlight', applyToCurrentTextBlockWhenEmpty),
     toggleCode: () => typeof text === 'string'
       ? chain.insertContent({ type: 'text', text, marks: [{ type: 'code' }] }).run()
       : chain.toggleCode().run(),
@@ -4974,6 +4983,7 @@ function highlightOutlineHeading(heading: HTMLElement): void {
 function toggleInlineMark(
   editor: Editor,
   mark: 'bold' | 'italic' | 'underline' | 'strike' | 'highlight',
+  applyToCurrentTextBlockWhenEmpty: boolean,
 ): boolean {
   const selection = editor.state.selection
   const selectedRange = { from: selection.from, to: selection.to }
@@ -4982,7 +4992,10 @@ function toggleInlineMark(
   // 对包含公式的选区执行 toggleBold 时，要避免 Markdown
   // 序列化器把 ** 插入到公式节点边界内部，生成无效的标记嵌套。
   if (mark === 'bold') {
-    const { from, to } = selection
+    const from = applyToCurrentTextBlockWhenEmpty && selection.empty && selection.$from.parent.isTextblock
+      ? selection.$from.start() : selection.from
+    const to = applyToCurrentTextBlockWhenEmpty && selection.empty && selection.$from.parent.isTextblock
+      ? selection.$from.end() : selection.to
     const textRanges = getTextRangesExcludingMath(editor, from, to)
     const hasMath = hasMathNodeInRange(editor, from, to)
     if (hasMath) {
@@ -4996,12 +5009,29 @@ function toggleInlineMark(
     }
   }
 
-  const chain = editor.chain().focus()
-  if (mark === 'bold') return chain.toggleBold().run()
-  if (mark === 'italic') return chain.toggleItalic().run()
-  if (mark === 'underline') return chain.toggleUnderline().run()
-  if (mark === 'highlight') return chain.toggleMark('highlight').run()
-  return chain.toggleStrike().run()
+  if (!applyToCurrentTextBlockWhenEmpty || !selection.empty || !selection.$from.parent.isTextblock) {
+    const chain = editor.chain().focus()
+    if (mark === 'bold') return chain.toggleBold().run()
+    if (mark === 'italic') return chain.toggleItalic().run()
+    if (mark === 'underline') return chain.toggleUnderline().run()
+    if (mark === 'highlight') return chain.toggleMark('highlight').run()
+    return chain.toggleStrike().run()
+  }
+
+  const cursor = selection.from
+  const block = { from: selection.$from.start(), to: selection.$from.end() }
+  const chain = editor.chain().focus().setTextSelection(block)
+  const result = mark === 'bold'
+    ? chain.toggleBold().run()
+    : mark === 'italic'
+      ? chain.toggleItalic().run()
+      : mark === 'underline'
+        ? chain.toggleUnderline().run()
+        : mark === 'highlight'
+          ? chain.toggleMark('highlight').run()
+          : chain.toggleStrike().run()
+  if (result) editor.commands.setTextSelection(cursor)
+  return result
 }
 
 function hasMathNodeInRange(editor: Editor, from: number, to: number): boolean {
@@ -5508,10 +5538,14 @@ function setCodeBlockLanguage(editor: Editor, text?: string): boolean {
   const current = getCurrentCodeBlock(editor)
   if (!current) return false
   const language = (text ?? '').trim()
+  const scrollingElement = document.scrollingElement
+  const scrollTop = scrollingElement?.scrollTop ?? 0
+  const scrollLeft = scrollingElement?.scrollLeft ?? 0
   editor.view.dispatch(editor.state.tr.setNodeMarkup(current.pos, undefined, {
     ...current.node.attrs,
     language: language.length > 0 ? language : null,
   }))
+  restoreCodeBlockScrollPosition(scrollingElement, scrollTop, scrollLeft)
   return true
 }
 
@@ -5528,11 +5562,29 @@ function setCodeBlockLanguageAt(editor: Editor, text?: string): boolean {
   const node = editor.state.doc.nodeAt(position)
   if (!node || node.type.name !== 'codeBlock') return false
   const language = payload.language.trim()
+  const scrollingElement = document.scrollingElement
+  const scrollTop = scrollingElement?.scrollTop ?? 0
+  const scrollLeft = scrollingElement?.scrollLeft ?? 0
   editor.view.dispatch(editor.state.tr.setNodeMarkup(position, undefined, {
     ...node.attrs,
     language: language.length > 0 ? language : null,
   }))
+  restoreCodeBlockScrollPosition(scrollingElement, scrollTop, scrollLeft)
   return true
+}
+
+function restoreCodeBlockScrollPosition(
+  scrollingElement: Element | null,
+  scrollTop: number,
+  scrollLeft: number,
+): void {
+  if (!(scrollingElement instanceof HTMLElement)) return
+  scrollingElement.scrollTop = scrollTop
+  scrollingElement.scrollLeft = scrollLeft
+  window.requestAnimationFrame(() => {
+    scrollingElement.scrollTop = scrollTop
+    scrollingElement.scrollLeft = scrollLeft
+  })
 }
 
 function insertCodeBlockWithLanguage(editor: Editor, text?: string): boolean {
@@ -5676,6 +5728,9 @@ function exitCodeBlock(editor: Editor): boolean {
 
 function clearParagraphFormat(editor: Editor): boolean {
   const { state } = editor
+  const originalFrom = state.selection.from
+  const originalTo = state.selection.to
+  const wasEmpty = state.selection.empty
   const $from = state.doc.resolve(state.selection.from)
   const blockFrom = $from.start()
   const blockTo = $from.end()
@@ -5695,7 +5750,13 @@ function clearParagraphFormat(editor: Editor): boolean {
   const chain = editor.chain().focus()
   const $current = editor.state.doc.resolve(editor.state.selection.from)
   chain.setTextSelection({ from: $current.start(), to: $current.end() })
-  return chain.clearNodes().unsetAllMarks({ ignoreClearable: true }).run()
+  const result = chain.clearNodes().unsetAllMarks({ ignoreClearable: true }).run()
+  if (result) {
+    editor.commands.setTextSelection(wasEmpty
+      ? originalFrom
+      : { from: originalFrom, to: originalTo })
+  }
+  return result
 }
 
 function rotateSelectedImageClockwise(editor: Editor): boolean {

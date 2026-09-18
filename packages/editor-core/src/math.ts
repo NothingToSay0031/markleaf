@@ -1,7 +1,6 @@
 import { mathInlineTokenizer, mathBlockTokenizer, normalizeMathSource } from './document/markdown-syntax'
 import { InputRule, Node } from '@tiptap/core'
 import 'katex/dist/katex.min.css'
-import katexSelfContainedCss from 'virtual:katex-css'
 import katex from 'katex'
 
 type MathNodeContent = { content?: Array<{ text?: string }> }
@@ -265,9 +264,6 @@ export const MathBlock = Node.create({
   },
 })
 
-/// 自包含的 KaTeX CSS（woff2 字体内联为 base64），用于导出 HTML/PDF。
-export const katexCss = katexSelfContainedCss
-
 function decodeHtmlEntities(text: string): string {
   const textarea = document.createElement('textarea')
   textarea.innerHTML = text
@@ -281,8 +277,8 @@ export function renderMathInHtml(html: string, throwOnError = false): string {
     .replace(/<span data-math-inline="1">([\s\S]*?)<\/span>/g, (_, latex: string) => {
       const source = decodeHtmlEntities(latex)
       return source
-        ? katex.renderToString(source, { throwOnError })
-        : '<span class="markleaf-math-placeholder">...</span>'
+        ? `<span class="markleaf-math markleaf-math-inline">${katex.renderToString(source, { throwOnError })}</span>`
+        : '<span class="markleaf-math markleaf-math-inline markleaf-math-placeholder">...</span>'
     })
     .replace(/<div data-math-block="1"([^>]*)>([\s\S]*?)<\/div>/g, (_, attrs: string, latex: string) => {
       const numberMatch = /data-math-number="([^"]*)"/.exec(attrs)
