@@ -112,10 +112,10 @@ require_text "$(method_body "$MAC_MENU" validateMenuItem)" 'SidebarMenuPolicy.le
 mac_help="$(method_body "$MAC_MENU" helpMenu)"
 reject_text "$mac_help" 'openHomepage'
 require_text "$mac_help" 'openHelp'
-require_text "$mac_help" 'checkForUpdates'
+reject_text "$mac_help" 'checkForUpdates'
 require_text "$mac_help" 'openWelcome'
 mac_help_sequence="$(grep -E 'commandItem|separator' <<<"$mac_help" | sed 's/^[[:space:]]*//')"
-expected_mac_help_sequence=$'menu.addItem(commandItem(L10n.t("欢迎"), "openWelcome"))\nmenu.addItem(.separator())\nmenu.addItem(commandItem(L10n.t("快捷键"), "showShortcuts"))\nmenu.addItem(commandItem(L10n.t("更新内容"), "openChangelog"))\nsamples.addItem(commandItem(L10n.t(sample.titleKey), sample.command))\nmenu.addItem(.separator())\nmenu.addItem(commandItem(L10n.t("学习 Markdown…"), "learnMarkdown"))\nmenu.addItem(commandItem(L10n.t("安装可选字体…"), "installOptionalFonts"))\nmenu.addItem(commandItem(L10n.t("检查更新…"), "checkForUpdates"))\nmenu.addItem(.separator())\nmenu.addItem(commandItem(L10n.t("在线帮助"), "openHelp"))'
+expected_mac_help_sequence=$'menu.addItem(commandItem(L10n.t("欢迎"), "openWelcome"))\nmenu.addItem(.separator())\nmenu.addItem(commandItem(L10n.t("快捷键"), "showShortcuts"))\nmenu.addItem(commandItem(L10n.t("更新内容"), "openChangelog"))\nsamples.addItem(commandItem(L10n.t(sample.titleKey), sample.command))\nmenu.addItem(.separator())\nmenu.addItem(commandItem(L10n.t("学习 Markdown…"), "learnMarkdown"))\nmenu.addItem(commandItem(L10n.t("安装可选字体…"), "installOptionalFonts"))\nmenu.addItem(.separator())\nmenu.addItem(commandItem(L10n.t("在线帮助"), "openHelp"))'
 [[ "$mac_help_sequence" == "$expected_mac_help_sequence" ]] || fail "macOS help menu order or grouping is incorrect"
 
 require_text "$(method_body "$MAC_MENU" editMenu)" 'commandItem(L10n.t("查找与替换"), "find", key: "f")'

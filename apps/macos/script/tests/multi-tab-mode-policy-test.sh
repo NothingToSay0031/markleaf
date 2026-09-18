@@ -28,10 +28,7 @@ require "$SETTINGS" 'var multiTabEnabled = true' 'multi-tab must default to enab
 require "$SETTINGS" 'forKey: .multiTabEnabled' 'legacy settings must decode multi-tab with a safe default'
 require "$PREFS" 'private let multiTabCheck' 'preferences must expose the multi-tab switch'
 require "$PREFS" 'settings.multiTabEnabled = multiTabCheck.state == .on' 'preferences must persist the multi-tab switch'
-require "$PREFS" 'editorCentersMultiTabCheckbox(for: displayLanguage)' 'the multi-tab checkbox must use independent centering'
-require "$PREFS" 'editorCentersBlockHandleCheckbox(for: displayLanguage)' 'the block-handle checkbox must use independent centering'
-require "$PREFS" 'if centersMultiTab { editorCenteredCheckboxes.insert(multiTabCheck) }' 'the multi-tab checkbox must be registered for independent centering'
-require "$PREFS" 'if centersBlockHandle { editorCenteredCheckboxes.insert(blockHandleCheck) }' 'the block-handle checkbox must be registered for independent centering'
+require "$PREFS" 'let editorAlignedCheckboxes: Set<NSButton> = [' 'editor checkboxes must use a shared alignment group'
 PREFS_FILE_BODY=$(method_body "$PREFS" filePage)
 PREFS_EDITOR_BODY=$(method_body "$PREFS" editorPage)
 require_text "$PREFS_EDITOR_BODY" '.header(L10n.t("文档与标签"))' 'the editor page must contain a documents-and-tabs group'

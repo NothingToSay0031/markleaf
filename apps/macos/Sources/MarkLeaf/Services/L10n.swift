@@ -109,6 +109,7 @@ enum L10n {
         "通用": "一般",
         "关于 MarkLeaf": "MarkLeaf について",
         "偏好设置…": "環境設定…",
+        "服务": "サービス",
         "隐藏 MarkLeaf": "MarkLeaf を隠す",
         "隐藏其他": "その他を隠す",
         "全部显示": "すべて表示",
@@ -937,6 +938,7 @@ enum L10n {
         // 应用菜单
         "关于 MarkLeaf": "關於 MarkLeaf",
         "偏好设置…": "偏好設定…",
+        "服务": "服務",
         "隐藏 MarkLeaf": "隱藏 MarkLeaf",
         "隐藏其他": "隱藏其他",
         "全部显示": "全部顯示",
@@ -1775,6 +1777,7 @@ enum L10n {
         "通用": "General",
         "关于 MarkLeaf": "About MarkLeaf",
         "偏好设置…": "Preferences…",
+        "服务": "Services",
         "隐藏 MarkLeaf": "Hide MarkLeaf",
         "隐藏其他": "Hide Others",
         "全部显示": "Show All",

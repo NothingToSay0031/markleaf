@@ -15,6 +15,8 @@ import {
   exportEditorSelection,
   replaceAllInEditor,
   replaceCurrentInEditor,
+  pasteClipboardContentWithResult,
+  pasteMarkdownTextWithResult,
   setMarkdownEditingSettings,
 } from '../src/index'
 
@@ -1500,6 +1502,86 @@ describe('paste safety', () => {
     const markdown = getMarkdown(editor)
     expect(markdown).toContain('<b>不是 HTML</b>')
     expect(markdown).toContain('中文 😀')
+  })
+
+  it('inserts pasted text literally inside the active code block', () => {
+    const element = document.createElement('div')
+    document.body.append(element)
+    const editor = createEditor(element, '```\ninside\n```')
+    editors.push(editor)
+
+    let codeBlockPosition: number | null = null
+    let codeBlockEnd: number | null = null
+    editor.state.doc.descendants((node, position) => {
+      if (node.type.name !== 'codeBlock') return
+      codeBlockPosition = position
+      codeBlockEnd = position + node.nodeSize - 1
+    })
+    expect(codeBlockPosition).not.toBeNull()
+    expect(codeBlockEnd).not.toBeNull()
+    editor.commands.setTextSelection(codeBlockPosition! + 3)
+
+    const result = pasteClipboardContentWithResult(editor, 'next\n# literal', '')
+    expect(result.success).toBe(true)
+    expect(getMarkdown(editor).trimEnd()).toBe('```\ninnext\n# literalside\n```')
+    expect(result).toEqual({ success: true, outcome: 'plainText' })
+  })
+
+  it('keeps inline-code paste inside the active code mark', () => {
+    const element = document.createElement('div')
+    document.body.append(element)
+    const editor = createEditor(element, 'before `code` after')
+    editors.push(editor)
+
+    let codePosition: number | null = null
+    editor.state.doc.descendants((node, position) => {
+      if (node.isText && node.marks.some((mark) => mark.type.name === 'code')) {
+        codePosition = position + 2
+        return false
+      }
+      return true
+    })
+    expect(codePosition).not.toBeNull()
+    editor.commands.setTextSelection(codePosition!)
+
+    const result = pasteMarkdownTextWithResult(editor, '# pasted\nnext')
+    expect(result).toEqual({ success: true, outcome: 'plainText' })
+    expect(editor.state.doc.firstChild?.type.name).toBe('paragraph')
+    const codeText: string[] = []
+    editor.state.doc.descendants((node) => {
+      if (node.isText && node.marks.some((mark) => mark.type.name === 'code')) codeText.push(node.text ?? '')
+      return true
+    })
+    expect(codeText.join('')).toContain('# pasted')
+  })
+
+  it('keeps front-matter paste inside the YAML block', () => {
+    const element = document.createElement('div')
+    document.body.append(element)
+    const editor = createEditor(element, '---\ntitle: old\n---\n\nbody')
+    editors.push(editor)
+
+    editor.commands.setTextSelection(editor.state.doc.firstChild!.nodeSize - 1)
+    const result = pasteClipboardContentWithResult(editor, '# pasted\nnext', '')
+
+    expect(result).toEqual({ success: true, outcome: 'plainText' })
+    expect(editor.state.doc.firstChild?.type.name).toBe('frontMatter')
+    expect(editor.state.doc.firstChild?.textContent).toContain('# pasted')
+    expect(getMarkdown(editor).trimEnd()).not.toContain('---\n\n# pasted')
+  })
+
+  it('keeps footnote-definition paste inside the definition body', () => {
+    const element = document.createElement('div')
+    document.body.append(element)
+    const editor = createEditor(element, '[^1]: note')
+    editors.push(editor)
+
+    editor.commands.setTextSelection(10)
+    const result = pasteClipboardContentWithResult(editor, '# pasted\nnext', '')
+
+    expect(result).toEqual({ success: true, outcome: 'plainText' })
+    expect(getMarkdown(editor).trimEnd()).not.toContain('\n# pasted')
+    expect(findFootnoteDefinitionBody(editor, '1')).toContain('# pasted')
   })
 
   it('can escape literal symbols without changing inline or fenced code', () => {

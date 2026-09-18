@@ -20,8 +20,8 @@ grep -Fq 'SaveMenuPolicy.isSaveAllEnabled' "$MENU" \
 rename_menu_body="$(sed -n '/case "renameActiveTab":/,/case "recoverUnsavedFiles":/p' "$MENU")"
 printf '%s' "$rename_menu_body" | grep -Fq 'renameActiveTab' \
     || fail "File menu must expose Rename and route it explicitly"
-printf '%s' "$rename_menu_body" | grep -Fq 'activeTabSession?.documentURL != nil' \
-    || fail "Rename must be available for any active local document"
+printf '%s' "$rename_menu_body" | grep -Fq 'DocumentRenamePolicy.canRenameActiveDocument' \
+    || fail "Rename must use the shared writable-document policy"
 printf '%s' "$rename_menu_body" | grep -Fq 'workspaceRoot' \
     && fail "Rename must not require the document to live inside a workspace" || true
 

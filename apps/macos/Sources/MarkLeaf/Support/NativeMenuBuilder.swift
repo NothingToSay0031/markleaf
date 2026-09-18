@@ -8,13 +8,19 @@ final class NativeMenuBuilder {
 
     func build() -> NSMenu {
         let mainMenu = NSMenu()
-        addMenu(mainMenu, title: ProcessInfo.processInfo.processName, submenu: appMenu())
+        let appMenu = appMenu()
+        addMenu(mainMenu, title: ProcessInfo.processInfo.processName, submenu: appMenu)
         addMenu(mainMenu, title: L10n.t("文件"), submenu: fileMenu())
         addMenu(mainMenu, title: L10n.t("编辑"), submenu: editMenu())
         addMenu(mainMenu, title: L10n.t("插入"), submenu: insertMenu())
         addMenu(mainMenu, title: L10n.t("格式"), submenu: formatMenu())
         addMenu(mainMenu, title: L10n.t("视图"), submenu: viewMenu())
         addMenu(mainMenu, title: L10n.t("帮助"), submenu: helpMenu())
+        if let servicesItem = appMenu.items.first(
+            where: { $0.representedObject as? String == "servicesMenu" }
+        ) {
+            NSApp.servicesMenu = servicesItem.submenu
+        }
         return mainMenu
     }
 
@@ -34,8 +40,11 @@ final class NativeMenuBuilder {
     private func appMenu() -> NSMenu {
         let menu = NSMenu()
         menu.addItem(commandItem(L10n.t("关于 MarkLeaf"), "showAbout"))
+        menu.addItem(commandItem(L10n.t("检查更新…"), "checkForUpdates"))
         menu.addItem(.separator())
         menu.addItem(commandItem(L10n.t("偏好设置…"), "showPreferences", key: ","))
+        menu.addItem(.separator())
+        menu.addItem(servicesMenuItem())
         menu.addItem(.separator())
         menu.addItem(item(L10n.t("隐藏 MarkLeaf"), #selector(NSApplication.hide(_:)), target: NSApp, key: "h"))
         menu.addItem(item(L10n.t("隐藏其他"), #selector(NSApplication.hideOtherApplications(_:)), target: NSApp, key: "h", mask: [.command, .option]))
@@ -43,6 +52,14 @@ final class NativeMenuBuilder {
         menu.addItem(.separator())
         menu.addItem(item(L10n.t("退出 MarkLeaf"), #selector(NSApplication.terminate(_:)), target: NSApp, key: "q"))
         return menu
+    }
+
+    private func servicesMenuItem() -> NSMenuItem {
+        let services = NSMenu(title: L10n.t("服务"))
+        let item = NSMenuItem(title: L10n.t("服务"), action: nil, keyEquivalent: "")
+        item.submenu = services
+        item.representedObject = "servicesMenu"
+        return item
     }
 
     // MARK: - 文件（对应 Windows BuildFileMenu）
@@ -312,7 +329,6 @@ final class NativeMenuBuilder {
         menu.addItem(.separator())
         menu.addItem(commandItem(L10n.t("学习 Markdown…"), "learnMarkdown"))
         menu.addItem(commandItem(L10n.t("安装可选字体…"), "installOptionalFonts"))
-        menu.addItem(commandItem(L10n.t("检查更新…"), "checkForUpdates"))
         menu.addItem(.separator())
         menu.addItem(commandItem(L10n.t("在线帮助"), "openHelp"))
         return menu
@@ -491,7 +507,11 @@ final class MenuRouter: NSObject, NSMenuItemValidation, NSMenuDelegate {
                 )
             )
         case "renameActiveTab":
-            return AppWindowManager.shared.activeWindowSession?.activeTabSession?.documentURL != nil
+            let activeTabSession = AppWindowManager.shared.activeWindowSession?.activeTabSession
+            return DocumentRenamePolicy.canRenameActiveDocument(
+                hasFileURL: activeTabSession?.documentURL != nil,
+                isReadOnly: activeTabSession?.isReadOnly == true
+            )
         default:
             break
         }
@@ -645,7 +665,12 @@ final class MenuRouter: NSObject, NSMenuItemValidation, NSMenuDelegate {
         case "shareActiveTab":
             AppWindowManager.shared.activeWindowController?.shareActiveTab()
         case "renameActiveTab":
-            session?.renameActiveDocument()
+            if let session, DocumentRenamePolicy.canRenameActiveDocument(
+                hasFileURL: session.documentURL != nil,
+                isReadOnly: session.isReadOnly
+            ) {
+                session.renameActiveDocument()
+            }
         case "openHelp":
             if let url = URL(string: "https://github.com/zhuanshunjishi2017/markleaf/blob/main/README.md") {
                 NSWorkspace.shared.open(url)

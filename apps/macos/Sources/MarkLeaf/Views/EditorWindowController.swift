@@ -46,6 +46,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     private var lastAppliedSidebarVisible: Bool?
     private var lastAppliedOutlineDetached: Bool?
     private var statusClearTimer: Timer?
+    private var windowTitleTransitionView: WindowTitleTransitionView?
+    private var isTitleStatusMarkerVisible: Bool?
 
     private(set) var isFocusMode = false
     private var allowsNextClose = false
@@ -128,11 +130,62 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func applyWindowTitle() {
-        guard SettingsService.shared.settings.multiTabEnabled else {
-            window?.title = activeSession.documentURL?.lastPathComponent ?? L10n.t("未命名")
+        let multiTabEnabled = SettingsService.shared.settings.multiTabEnabled
+        guard !multiTabEnabled else {
+            window?.title = "MarkLeaf"
+            window?.titleVisibility = .visible
+            windowTitleTransitionView?.isHidden = true
             return
         }
-        window?.title = "MarkLeaf"
+
+        let baseTitle = DocumentWindowTitle.base(
+            fileName: activeSession.documentURL?.lastPathComponent,
+            untitledLabel: L10n.t("未命名")
+        )
+        window?.title = baseTitle
+        window?.titleVisibility = .hidden
+        windowTitleTransitionView?.isHidden = false
+        windowTitleTransitionView?.setFilename(baseTitle)
+        let marker = DocumentWindowTitle.statusMarker(
+            isDirty: activeSession.isDirty,
+            isReadOnly: activeSession.isReadOnly,
+            modifiedLabel: L10n.t("已修改"),
+            readOnlyLabel: L10n.t("只读")
+        )
+        transitionTitleStatusMarker(to: marker)
+    }
+
+    private func installWindowTitleTransitionView() {
+        guard let closeButton = window?.standardWindowButton(.closeButton),
+              let titlebarContainer = closeButton.superview,
+              windowTitleTransitionView == nil else { return }
+
+        let transitionView = WindowTitleTransitionView()
+        transitionView.translatesAutoresizingMaskIntoConstraints = false
+        titlebarContainer.addSubview(transitionView)
+        NSLayoutConstraint.activate([
+            transitionView.centerXAnchor.constraint(equalTo: titlebarContainer.centerXAnchor),
+            transitionView.centerYAnchor.constraint(equalTo: titlebarContainer.centerYAnchor),
+            transitionView.leadingAnchor.constraint(
+                greaterThanOrEqualTo: titlebarContainer.leadingAnchor,
+                constant: 76
+            ),
+            transitionView.trailingAnchor.constraint(
+                lessThanOrEqualTo: titlebarContainer.trailingAnchor,
+                constant: -12
+            ),
+        ])
+        windowTitleTransitionView = transitionView
+    }
+
+    private func transitionTitleStatusMarker(to marker: DocumentWindowTitle.StatusMarker) {
+        guard let titleView = windowTitleTransitionView else { return }
+        guard isTitleStatusMarkerVisible != marker.isVisible else {
+            titleView.setStatusMarker(marker.text, visible: marker.isVisible, animated: false)
+            return
+        }
+        isTitleStatusMarkerVisible = marker.isVisible
+        titleView.setStatusMarker(marker.text, visible: marker.isVisible, animated: true)
     }
 
     /// 为标签创建（或复用）会话与编辑器视图；懒加载的唯一入口。
@@ -994,6 +1047,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
     private func buildContent() {
         guard let window else { return }
+        installWindowTitleTransitionView()
 
         let rootView = NSView()
         let sidebarView = SidebarView(session: session)
