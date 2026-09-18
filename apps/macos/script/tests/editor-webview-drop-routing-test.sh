@@ -14,6 +14,10 @@ body="$(awk '/^final class EditorWebView:/{found=1} found{print} /^enum EditorAu
 
 grep -Fq 'override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation' <<<"$body" \
   || fail "EditorWebView must claim native file drags before WebKit swallows them"
+grep -Fq 'override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation' <<<"$body" \
+  || fail "EditorWebView must keep claiming native file drags during updates"
+grep -Fq 'override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool' <<<"$body" \
+  || fail "EditorWebView must explicitly prepare for native file drops"
 grep -Fq 'override func performDragOperation(_ sender: NSDraggingInfo) -> Bool' <<<"$body" \
   || fail "EditorWebView must handle native file drops"
 grep -Fq 'EditorDropPolicy.classify(urls)' <<<"$body" \

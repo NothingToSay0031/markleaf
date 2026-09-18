@@ -63,6 +63,16 @@ final class EditorWebView: WKWebView {
             : .copy
     }
 
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        droppedFileURLs(from: sender).isEmpty
+            ? super.draggingUpdated(sender)
+            : .copy
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        !droppedFileURLs(from: sender).isEmpty
+    }
+
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let urls = droppedFileURLs(from: sender)
         guard !urls.isEmpty else { return super.performDragOperation(sender) }
@@ -217,26 +227,36 @@ final class EditorWebContainerView: NSView, WKNavigationDelegate {
     // MARK: - NSDraggingDestination
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        .copy
+        droppedFileURLs(from: sender).isEmpty ? super.draggingEntered(sender) : .copy
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        droppedFileURLs(from: sender).isEmpty ? super.draggingUpdated(sender) : .copy
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        !droppedFileURLs(from: sender).isEmpty
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
-        guard let urls = sender.draggingPasteboard.readObjects(
-            forClasses: [NSURL.self], options: options) as? [URL] else {
-            return false
+        let urls = droppedFileURLs(from: sender)
+        guard !urls.isEmpty else { return super.performDragOperation(sender) }
+
+        let drop = EditorDropPolicy.classify(urls)
+        for url in drop.images {
+            session?.insertImageFile(at: url)
         }
-        let imageExtensions = Set(["png", "jpg", "jpeg", "gif", "webp", "bmp"])
-        let documentExtensions = Set(["md", "txt", "markdown"])
-        for url in urls {
-            let ext = url.pathExtension.lowercased()
-            if imageExtensions.contains(ext) {
-                session?.insertImageFile(at: url)
-            } else if documentExtensions.contains(ext) {
-                session?.openDocument(at: url)
-            }
+        for url in drop.documents {
+            session?.openDocument(at: url)
         }
         return !urls.isEmpty
+    }
+
+    private func droppedFileURLs(from sender: NSDraggingInfo) -> [URL] {
+        sender.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL] ?? []
     }
 
     required init?(coder: NSCoder) {
