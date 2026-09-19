@@ -102,6 +102,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         case hint(String, CGFloat)
         case centeredHint(String)
         case field(String, NSView)
+        case checkboxGroup([NSButton])
     }
 
     init(
@@ -492,9 +493,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
 
     private func editorPage() -> NSView {
         let editorCenteredCheckboxes: Set<NSButton> = [visualCjkAutoSpacingCheck]
-        let editorAlignedCheckboxes: Set<NSButton> = [
-            multiTabCheck, ignoreMaxWidthCheck, blockHandleCheck, restoreZoomCheck, ctrlWheelZoomCheck,
-        ]
+        let editorAlignedCheckboxes: Set<NSButton> = [restoreZoomCheck, ctrlWheelZoomCheck]
         let primaryLabelWidth = ceil((L10n.t("基础行高") as NSString).size(
             withAttributes: [.font: NSFont.systemFont(ofSize: 13)]
         ).width)
@@ -507,14 +506,12 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             : nil
         return formPage(rows: [
             .header(L10n.t("文档与标签")),
-            .field("", multiTabCheck),
+            .checkboxGroup([multiTabCheck, ignoreMaxWidthCheck, blockHandleCheck]),
             .header(L10n.t("可视化")),
             .field(L10n.t("基础行高"), lineHeightField),
             .field(L10n.t("基础字号"), fontSizeField),
             .field(L10n.t("最大内容宽度"), fieldRow(maxWidthField, unit: "px")),
             .field("", visualCjkAutoSpacingCheck),
-            .field("", ignoreMaxWidthCheck),
-            .field("", blockHandleCheck),
             .header(L10n.t("源码模式")),
             .field("", linkButton(L10n.t("字体设置…"), #selector(openFontSettings))),
             .field(L10n.t("默认缩进宽度"), sourceIndentField),
@@ -1006,6 +1003,17 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
                 } else {
                     stack.addArrangedSubview(row)
                 }
+            case .checkboxGroup(let checkboxes):
+                let group = NSStackView(views: checkboxes)
+                group.orientation = .vertical
+                group.alignment = .leading
+                group.spacing = 10
+                let wrapper = centeredFieldRow(group)
+                stack.addArrangedSubview(wrapper)
+                wrapper.widthAnchor.constraint(
+                    equalTo: stack.widthAnchor,
+                    constant: -(stack.edgeInsets.left + stack.edgeInsets.right)
+                ).isActive = true
             }
         }
 
