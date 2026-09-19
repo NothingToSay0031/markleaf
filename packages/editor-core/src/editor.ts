@@ -1035,6 +1035,25 @@ const FindHighlight = Extension.create({
 })
 
 const themedSelectionKey = new PluginKey('markleaf-themed-selection')
+const selectionHighlightName = 'markleaf-selection'
+
+type SelectionHighlightRegistry = { highlights?: Map<string, unknown> }
+type SelectionHighlightConstructor = new (...ranges: Range[]) => unknown
+
+function selectionHighlightSupport(targetWindow: Window | null): {
+  registry: SelectionHighlightRegistry['highlights']
+  ctor: SelectionHighlightConstructor
+} | null {
+  if (!targetWindow) return null
+  const css = (targetWindow as unknown as { CSS?: unknown }).CSS
+  if (!css || typeof css !== 'object' || !('highlights' in css)) return null
+  const registry = (css as SelectionHighlightRegistry).highlights
+  const candidate = (targetWindow as unknown as { Highlight?: unknown }).Highlight
+  const constructor = typeof candidate === 'function'
+    ? candidate as SelectionHighlightConstructor
+    : undefined
+  return registry && constructor ? { registry, ctor: constructor } : null
+}
 
 const ThemedSelection = Extension.create({
   name: 'markleafThemedSelection',
@@ -1044,6 +1063,37 @@ const ThemedSelection = Extension.create({
       view(view) {
         const mount = view.dom.parentElement
         if (!mount) return {}
+        const targetWindow = view.dom.ownerDocument.defaultView
+        const selectionHighlight = selectionHighlightSupport(targetWindow)
+        const highlightRegistry = selectionHighlight?.registry
+        const highlightCtor = selectionHighlight?.ctor
+        let highlightRange: Range | null = null
+
+        const clearSelectionHighlight = () => {
+          highlightRegistry?.delete(selectionHighlightName)
+          highlightRange = null
+        }
+        const paintSelectionHighlight = () => {
+          highlightRegistry?.delete(selectionHighlightName)
+          highlightRange = null
+          const { from, to, empty } = view.state.selection
+          if (!(view.state.selection instanceof TextSelection) || empty || from === to) return
+          try {
+            const start = view.domAtPos(from)
+            const end = view.domAtPos(to)
+            highlightRange = view.dom.ownerDocument.createRange()
+            highlightRange.setStart(start.node, start.offset)
+            highlightRange.setEnd(end.node, end.offset)
+            highlightRegistry?.set(
+              selectionHighlightName,
+              new highlightCtor!(highlightRange),
+            )
+          } catch {
+            highlightRange = null
+            highlightRegistry?.delete(selectionHighlightName)
+          }
+        }
+        paintSelectionHighlight()
 
         const handleBackgroundMouseDown = (event: MouseEvent) => {
           if (event.button !== 0 || event.target !== mount || view.state.selection.empty) {
@@ -1057,14 +1107,53 @@ const ThemedSelection = Extension.create({
         }
 
         mount.addEventListener('mousedown', handleBackgroundMouseDown)
+        const handleMouseUp = () => {
+          // Async autoscroll and WebKit selection tracking can leave the DOM
+          // selection at an older endpoint. At mouse-up, normalize both PM and
+          // DOM to the same range so upward drags can reliably shrink it.
+          window.setTimeout(() => {
+            const domSelection = view.dom.ownerDocument.getSelection()
+            if (!domSelection || domSelection.isCollapsed) return
+            const anchorNode = domSelection.anchorNode
+            const focusNode = domSelection.focusNode
+            if (!anchorNode || !focusNode) return
+            const anchor = view.posAtDOM(domSelection.anchorNode, domSelection.anchorOffset)
+            const head = view.posAtDOM(domSelection.focusNode, domSelection.focusOffset)
+            const selection = TextSelection.between(
+              view.state.doc.resolve(anchor),
+              view.state.doc.resolve(head),
+            )
+            view.dispatch(view.state.tr
+              .setSelection(selection)
+              .setMeta('addToHistory', false))
+            clearDomSelection(view.dom.ownerDocument)
+            view.dispatch(view.state.tr
+              .setSelection(view.state.selection)
+              .setMeta('addToHistory', false))
+          }, 0)
+        }
+        view.dom.ownerDocument.addEventListener('mouseup', handleMouseUp, true)
         return {
           destroy() {
             mount.removeEventListener('mousedown', handleBackgroundMouseDown)
+            view.dom.ownerDocument.removeEventListener('mouseup', handleMouseUp, true)
+            clearSelectionHighlight()
+          },
+          update(view, previousState) {
+            if (previousState.doc !== view.state.doc
+              || previousState.selection !== view.state.selection) {
+              paintSelectionHighlight()
+            }
           },
         }
       },
       props: {
         decorations(state) {
+          // CSS Custom Highlight is O(1) DOM state for a giant selection and
+          // avoids wrapping thousands of nodes while the user drags.
+          if (selectionHighlightSupport(typeof window === 'undefined' ? null : window)) {
+            return DecorationSet.empty
+          }
           const { from, to, empty } = state.selection
           if (!(state.selection instanceof TextSelection) || empty || from === to) {
             return DecorationSet.empty

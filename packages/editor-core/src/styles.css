@@ -242,6 +242,17 @@ body.markleaf-theme-dark {
   color: var(--text-selected);
 }
 
+/* macOS paints large drag selections without wrapping every selected node. */
+::highlight(markleaf-selection) {
+  background: var(--theme-light);
+  color: var(--text-selected);
+}
+
+.markleaf-themed-visual-selection .markleaf-document ::selection {
+  background: transparent;
+  color: inherit;
+}
+
 /* 段落左侧浮动操作按钮（块手柄） */
 .markleaf-document {
   position: relative;
