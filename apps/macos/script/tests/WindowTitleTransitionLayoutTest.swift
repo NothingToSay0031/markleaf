@@ -12,6 +12,8 @@ expect(
     titleView.filenameLabel.font == NSFont.systemFont(ofSize: 13, weight: .bold),
     "single-tab filenames must match the native titlebar's bold title font"
 )
+// The filename and marker share one layer so the whole title moves together.
+expect(titleView.titleContentViewForTesting.layer != nil, "the title content must be layer-backed for reliable titlebar motion")
 titleView.setFilename("笔记.md")
 titleView.setStatusMarker("已修改", visible: true, animated: false)
 titleView.translatesAutoresizingMaskIntoConstraints = false
@@ -38,15 +40,20 @@ func centerOffset(_ view: NSView, in container: NSView) -> CGFloat {
     abs(view.frame.midX - container.bounds.midX)
 }
 
-titleView.setStatusMarker("已修改", visible: false, animated: false)
-titlebar.layoutSubtreeIfNeeded()
-
 func alignmentMidX(_ view: NSView, convertedTo container: NSView) -> CGFloat {
     let alignmentFrame = view.alignmentRect(forFrame: view.frame)
     return container.convert(alignmentFrame, from: view.superview!).midX
 }
+titleView.setStatusMarker("已修改", visible: false, animated: false)
+titlebar.layoutSubtreeIfNeeded()
+let hiddenTransform = titleView.titleSlideTransformForTesting
 expect(
-    abs(alignmentMidX(titleView.filenameLabel, convertedTo: titlebar) - titlebar.bounds.midX) < 0.5,
+    abs(hiddenTransform.m41 - titleView.titleSlideOffsetForTesting) < 0.5,
+    "hiding the marker must apply the stable whole-title slide offset"
+)
+expect(
+    abs(alignmentMidX(titleView.filenameLabel, convertedTo: titlebar)
+        + hiddenTransform.m41 - titlebar.bounds.midX) < 0.5,
     "saved filenames must be centered independently of the hidden modified marker"
 )
 
@@ -66,6 +73,8 @@ let combinedMidpoint = (
     min(filenameAlignment.minX, markerAlignment.minX)
       + max(filenameAlignment.maxX, markerAlignment.maxX)
 ) / 2
+let visibleTransform = titleView.titleSlideTransformForTesting
+expect(abs(visibleTransform.m41) < 0.5, "showing the marker must restore the whole-title position")
 expect(
     abs(combinedMidpoint - titlebar.bounds.midX) < 0.5,
     "filename and modified marker must be centered as one group while modified"
