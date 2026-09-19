@@ -44,10 +44,11 @@ final class EditorWebView: WKWebView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard !isHandlingSyntheticDrag else {
-            super.mouseDragged(with: event)
-            return
-        }
+        // Keep the latest drag point even while a scroll/replay pair is in
+        // flight. Replaying a stale bottom-edge event would re-extend an
+        // upward selection and make the highlight appear stuck.
+        autoscrollEvent = event
+        guard !isHandlingSyntheticDrag else { return }
         scheduleAutoscroll(event)
         super.mouseDragged(with: event)
     }
