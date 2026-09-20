@@ -8,6 +8,17 @@ let package = Package(
         .executableTarget(
             name: "MarkLeaf",
             path: "Sources/MarkLeaf"
+        ),
+        .executableTarget(
+            name: "MarkLeafQuickLook",
+            path: "Sources/QuickLook",
+            exclude: ["entitlements.plist"],
+            linkerSettings: [
+                .linkedFramework("AppKit"),
+                .linkedFramework("QuickLookUI"),
+                .linkedFramework("WebKit"),
+                .unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"]),
+            ]
         )
     ]
 )

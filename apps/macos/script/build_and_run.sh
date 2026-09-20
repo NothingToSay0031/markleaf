@@ -56,6 +56,8 @@ mkdir -p "$APP_MACOS"
 cp -X "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
 
+"$ROOT_DIR/script/quicklook/stage-extension.sh" "$ROOT_DIR" "$APP_BUNDLE"
+
 mkdir -p "$APP_CONTENTS/Resources"
 cp -RX "$ROOT_DIR/Resources/EditorWeb" "$APP_CONTENTS/Resources/EditorWeb"
 cp -RX "$ROOT_DIR/Resources/Styles" "$APP_CONTENTS/Resources/Styles"
@@ -152,7 +154,10 @@ if command -v codesign >/dev/null 2>&1; then
   SIGNING_BUNDLE="$SIGNING_ROOT/$APP_NAME.app"
   cp -RX "$APP_BUNDLE" "$SIGNING_BUNDLE"
   xattr -cr "$SIGNING_BUNDLE"
-  codesign --force --deep --sign - "$SIGNING_BUNDLE" >/dev/null
+  # File Provider can reattach provenance between the broad clear and signing.
+  xattr -cr "$SIGNING_BUNDLE/Contents/PlugIns/MarkLeafQuickLook.appex"
+  xattr -cr "$SIGNING_BUNDLE"
+  codesign --force --sign - "$SIGNING_BUNDLE" >/dev/null
   codesign --verify --deep --strict "$SIGNING_BUNDLE"
   rm -rf "$APP_BUNDLE"
   cp -RX "$SIGNING_BUNDLE" "$APP_BUNDLE"
