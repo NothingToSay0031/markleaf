@@ -1,3 +1,5 @@
+import { isReadingAnchorInput } from '@markleaf/editor-core'
+
 export const protocolVersion = 1
 // Documents are sent as a single host message. Keep enough headroom for
 // ordinary multi-megabyte text files plus JSON framing and escaping.
@@ -88,6 +90,8 @@ export function isHostMessage(value: unknown): value is HostMessage {
   }
 
   const message = value as Partial<HostMessage>
+  if (message.type === 'restoreViewport' && !isRestoreViewportPayload(message.payload)) return false
+
   return message.protocolVersion === protocolVersion
     && (message.type === 'loadDocument'
       || message.type === 'setDocumentType'
@@ -109,6 +113,7 @@ export function isHostMessage(value: unknown): value is HostMessage {
 export function isRestoreViewportPayload(payload: unknown): payload is {
   scrollTop?: number
   selection?: { from: number; to: number }
+  readingAnchor?: unknown
 } {
   if (!payload || typeof payload !== 'object') return false
   const record = payload as Record<string, unknown>
@@ -119,5 +124,6 @@ export function isRestoreViewportPayload(payload: unknown): payload is {
     const value = selection as Record<string, unknown>
     if (typeof value.from !== 'number' || typeof value.to !== 'number') return false
   }
+  if ('readingAnchor' in record && !isReadingAnchorInput(record.readingAnchor)) return false
   return true
 }

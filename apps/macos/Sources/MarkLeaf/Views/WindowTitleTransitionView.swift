@@ -82,7 +82,12 @@ final class WindowTitleTransitionView: NSView {
         isStatusMarkerVisible = visible
         let targetAlpha: CGFloat = visible ? 1 : 0
         invalidateIntrinsicContentSize()
-        statusSpaceWidthConstraint.constant = statusMarkerWidth
+        // While hidden, keep the width of the marker that was last visible.
+        // Updating it from the hidden fallback text would change the centered
+        // content width in the middle of a transition (e.g. 只读 → 已修改).
+        if visible {
+            statusSpaceWidthConstraint.constant = statusMarkerWidth
+        }
         guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
             statusLabel.alphaValue = targetAlpha
             setTitleSlide(hidden: !visible, animated: false)
@@ -122,7 +127,7 @@ final class WindowTitleTransitionView: NSView {
     }
 
     private var titleSlideOffset: CGFloat {
-        (6 + statusMarkerWidth) / 2
+        (6 + statusSpaceWidthConstraint.constant) / 2
     }
 
     var titleSlideTransformForTesting: CATransform3D {

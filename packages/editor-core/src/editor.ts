@@ -4510,6 +4510,61 @@ function markdownInlineToHtmlText(markdown: string): string {
 export type FindResult = { current: number; total: number }
 export type SelectionExport = { text: string; markdown: string; html: string }
 
+/**
+ * Extract selection text while preserving semantic Markdown for formula nodes.
+ * ProseMirror's textBetween intentionally skips non-leaf nodes, but formulas
+ * are atom-like nodes with an internal text child, so the default traversal
+ * returns bare LaTeX and loses whether it was inline or display math.
+ */
+function semanticSelectionText(content: any, from: number, to: number, blockSeparator: string): string {
+  let text = ''
+  let firstBlock = true
+  content.nodesBetween(from, to, (node: any, position: number) => {
+    let nodeText = ''
+    const nodeName = node.type?.name
+    if (node.isText) {
+      nodeText = node.text.slice(Math.max(from, position) - position, to - position)
+    } else if (nodeName === 'mathInline') {
+      nodeText = `$${node.textContent || '...'}$`
+    } else if (nodeName === 'mathBlock') {
+      const latex = String(node.textContent || '').trim() || '...'
+      nodeText = `$$\n${latex}\n$$`
+    } else if (nodeName === 'table') {
+      nodeText = semanticTableText(node)
+    } else if (node.isLeaf) {
+      // Keep the existing plain-text behavior for images, diagrams and other
+      // leaf nodes: they have no textual fallback in a plain copy.
+      nodeText = ''
+    }
+
+    if (node.isBlock && (nodeText || node.isTextblock)) {
+      if (firstBlock) firstBlock = false
+      else text += blockSeparator
+    }
+    text += nodeText
+
+    // Formula nodes own their text child; do not visit it a second time.
+    if (nodeName === 'mathInline' || nodeName === 'mathBlock' || nodeName === 'table') return false
+    return undefined
+  })
+  return text
+}
+
+function semanticTableText(table: any): string {
+  const rows: string[] = []
+  table.forEach((row: any) => {
+    const cells: string[] = []
+    row.forEach((cell: any) => {
+      const value = semanticSelectionText(cell.content, 0, cell.content.size, ' ')
+        .replace(/\s*\n\s*/gu, ' ')
+        .trim()
+      cells.push(value)
+    })
+    rows.push(cells.join('\t'))
+  })
+  return rows.join('\n')
+}
+
 export function exportEditorSelection(editor: Editor): SelectionExport {
   // 公式/图表浮层源码框是普通 DOM 文本，没有 ProseMirror 选区：
   // 导出只取用户在源码框里真正选中的片段，且不改变焦点或选区。
@@ -4529,7 +4584,7 @@ export function exportEditorSelection(editor: Editor): SelectionExport {
   const markdown = getMarkdown(selectionEditor)
   selectionEditor.destroy()
   return {
-    text: slice.content.textBetween(0, slice.content.size, '\n', '\n'),
+    text: semanticSelectionText(slice.content, 0, slice.content.size, '\n'),
     markdown,
     html: container.innerHTML,
   }

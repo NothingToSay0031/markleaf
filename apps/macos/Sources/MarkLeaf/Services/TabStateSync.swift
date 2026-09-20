@@ -9,6 +9,7 @@ enum TabStateSync {
         isReadOnly: Bool = false,
         hasPendingExternalChange: Bool = false,
         scrollTop: Double? = nil,
+        readingAnchor: ReadingAnchor? = nil,
         revision: Int64,
         encoding: String,
         newLine: String,
@@ -22,6 +23,7 @@ enum TabStateSync {
         tab.isReadOnly = isReadOnly
         tab.hasPendingExternalChange = hasPendingExternalChange
         if let scrollTop { tab.scrollTop = scrollTop }
+        if let readingAnchor { tab.readingAnchor = readingAnchor }
         tab.contentRevision = revision
         tab.encoding = encoding
         tab.newLine = newLine

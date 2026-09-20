@@ -471,6 +471,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
                         isDirty: session.isDirty,
                         isReadOnly: session.isReadOnly,
                         hasPendingExternalChange: session.hasPendingExternalChange,
+                        readingAnchor: session.readingAnchor,
                         revision: session.currentRevision,
                         encoding: session.documentEncoding,
                         newLine: session.documentNewLine,
@@ -825,8 +826,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
                     encoding: record.encoding,
                     isReadOnly: record.isReadOnly
                 )
-                target.openInitialDocument(prepared: prepared, selection: selection)
-                target.pendingRestoreScrollTop = record.scrollTop
+        target.openInitialDocument(prepared: prepared, selection: selection)
+        target.pendingRestoreScrollTop = record.scrollTop
             } catch {
                 target.presentError(L10n.f("无法打开文档：%@", error.localizedDescription))
             }
@@ -1018,6 +1019,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// 窗口展示后加载初始文档/工作区。
     func openInitialDocument(path: String? = nil) {
         session.openInitialDocument(path: path)
+    }
+
+    func openBlankDocument() {
+        session.openBlankDocument()
     }
 
     /// 窗口展示后直接装载已预读的文档。

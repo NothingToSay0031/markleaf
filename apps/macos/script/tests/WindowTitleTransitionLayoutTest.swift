@@ -57,6 +57,28 @@ expect(
     "saved filenames must be centered independently of the hidden modified marker"
 )
 
+// Switching from a visible read-only marker to the hidden modified fallback
+// must not let the hidden fallback's width move the filename. This is the
+// exact View > Read Only Mode transition.
+titleView.setStatusMarker("只读", visible: true, animated: false)
+titlebar.layoutSubtreeIfNeeded()
+let readOnlySpaceWidth = titleView.statusSpaceWidthForTesting
+titleView.setStatusMarker("已修改", visible: false, animated: false)
+titlebar.layoutSubtreeIfNeeded()
+expect(
+    abs(titleView.statusSpaceWidthForTesting - readOnlySpaceWidth) < 0.5,
+    "hiding a read-only marker must not resize the title from its hidden fallback text"
+)
+expect(
+    abs(titleView.titleSlideTransformForTesting.m41 - titleView.titleSlideOffsetForTesting) < 0.5,
+    "hiding a read-only marker must use the visible read-only marker's centering width"
+)
+expect(
+    abs(alignmentMidX(titleView.filenameLabel, convertedTo: titlebar)
+        + titleView.titleSlideTransformForTesting.m41 - titlebar.bounds.midX) < 0.5,
+    "hiding a read-only marker must leave the filename independently centered"
+)
+
 titleView.setStatusMarker("已修改", visible: true, animated: false)
 titlebar.layoutSubtreeIfNeeded()
 let combinedLeading = min(titleView.filenameLabel.frame.minX, titleView.statusLabel.frame.minX)

@@ -84,6 +84,7 @@ final class WindowSession {
             isReadOnly: session.isReadOnly,
             hasPendingExternalChange: session.hasPendingExternalChange,
             scrollTop: session.scrollTop,
+            readingAnchor: session.readingAnchor,
             revision: session.currentRevision,
             encoding: session.documentEncoding,
             newLine: session.documentNewLine,

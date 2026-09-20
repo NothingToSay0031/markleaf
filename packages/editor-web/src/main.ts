@@ -39,6 +39,11 @@ import {
   setEditorSharedStrings,
   restoreVisualSelection,
   type VisualSelectionSnapshot,
+  collectTopLevelReadingBlocks,
+  isReadingAnchorInput,
+  normalizeReadingAnchor,
+  resolveReadingAnchorOrdinal,
+  type ReadingAnchor,
 } from '@markleaf/editor-core'
 import {
   rerenderMermaidElements,
@@ -95,6 +100,7 @@ let outlineTimer = 0
 let sourceEditor: SourceEditor | null = null
 let sourceMode = false
 let sourceScrollbarOverlay: SourceScrollbarOverlay | null = null
+let sourceEditorStateFrame = 0
 let sourceIndentWidth = 2
 let visualSelectionBeforeSourceMode: VisualSelectionSnapshot | null = null
 // 混合前端右键菜单（粗体/斜体/下划线工具栏）是否启用：由宿主下发，仅 Windows 端为 true。
@@ -198,7 +204,11 @@ const interactions = createEditorInteractions({
 const blockHandleButton = interactions.button
 const ensureBlockHandleOverlay = interactions.ensure
 const updateBlockHandleOverlay = interactions.update
-window.addEventListener('unload', () => { interactions.dispose(); readingBehavior.dispose() })
+window.addEventListener('unload', () => {
+  if (sourceEditorStateFrame) window.cancelAnimationFrame(sourceEditorStateFrame)
+  interactions.dispose()
+  readingBehavior.dispose()
+})
 
 let baseCss = ''
 let styleCatalog: { id: string; css: string; dependsOn?: string }[] = []
@@ -378,6 +388,81 @@ function getEditorScrollTop(): number {
   return Number.isFinite(value) && value >= 0 ? value : 0
 }
 
+function captureReadingAnchor(): ReadingAnchor | null {
+  if (sourceMode && sourceEditor) return sourceEditor.getReadingAnchor()
+
+  const blocks = collectTopLevelReadingBlocks(editor.state.doc)
+  const total = blocks.length
+  if (total === 0) return null
+
+  const content = document.querySelector<HTMLElement>('.markleaf-document') ?? editorMount
+  const contentTop = content.getBoundingClientRect().top
+  for (const block of blocks) {
+    const dom = editor.view.nodeDOM(block.position)
+    if (!(dom instanceof HTMLElement)) continue
+    const rect = dom.getBoundingClientRect()
+    if (rect.height <= 0 || rect.bottom <= contentTop + 1) continue
+
+    return normalizeReadingAnchor({
+      kind: 'visual',
+      ordinal: block.ordinal,
+      total,
+      token: block.text,
+      fraction: Math.min(1, Math.max(0, (contentTop - rect.top) / rect.height)),
+    })
+  }
+
+  return normalizeReadingAnchor({
+    kind: 'visual',
+    ordinal: blocks.length - 1,
+    total,
+    token: blocks.at(-1)?.text ?? '',
+    fraction: 0,
+  })
+}
+
+function restoreReadingAnchorAfterLayout(anchor: ReadingAnchor): void {
+  if (sourceMode && sourceEditor) {
+    sourceEditor.setReadingAnchor(anchor)
+    return
+  }
+
+  const content = document.querySelector<HTMLElement>('.markleaf-document') ?? editorMount
+
+  const apply = () => {
+    // Images, fonts, and editor transactions can replace the rendered block
+    // between retries. Resolve the block and DOM node for each attempt instead
+    // of retaining a detached node from the first pass.
+    const blocks = collectTopLevelReadingBlocks(editor.state.doc)
+    if (blocks.length === 0) return
+    const ordinal = resolveReadingAnchorOrdinal(anchor, blocks.map(block => block.text))
+    const block = blocks[ordinal]
+    const dom = block ? editor.view.nodeDOM(block.position) : null
+    if (!(dom instanceof HTMLElement)) return
+    const rect = dom.getBoundingClientRect()
+    if (rect.height <= 0) return
+    const contentTop = content.getBoundingClientRect().top
+    const scrollTop = getEditorScrollTop()
+    const target = scrollTop + rect.top - contentTop + anchor.fraction * rect.height
+    window.scrollTo({ top: Math.max(0, target), behavior: 'auto' })
+  }
+
+  const generation = ++scrollRestoreGeneration
+  const restore = () => {
+    if (generation === scrollRestoreGeneration) apply()
+  }
+  restore()
+  window.requestAnimationFrame(restore)
+  window.requestAnimationFrame(() => window.requestAnimationFrame(restore))
+  window.setTimeout(restore, 50)
+  window.setTimeout(restore, 150)
+  window.setTimeout(restore, 300)
+  if (document.fonts) void document.fonts.ready.then(restore)
+  for (const image of Array.from(editorMount.querySelectorAll<HTMLImageElement>('img'))) {
+    if (!image.complete) image.addEventListener('load', restore, { once: true })
+  }
+}
+
 function restoreEditorScrollTop(value: unknown): void {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return
   const top = Math.max(0, value)
@@ -391,7 +476,7 @@ function restoreEditorScrollTop(value: unknown): void {
   document.body.scrollTop = top
 }
 
-function restoreEditorScrollTopAfterLayout(value: unknown): void {
+function restoreEditorScrollTopAfterLayout(value: unknown, readingAnchor?: ReadingAnchor | null): void {
   const generation = ++scrollRestoreGeneration
   const restore = () => {
     if (generation === scrollRestoreGeneration) restoreEditorScrollTop(value)
@@ -404,6 +489,15 @@ function restoreEditorScrollTopAfterLayout(value: unknown): void {
   if (document.fonts) void document.fonts.ready.then(restore)
   for (const image of Array.from(editorMount.querySelectorAll<HTMLImageElement>('img'))) {
     if (!image.complete) image.addEventListener('load', restore, { once: true })
+  }
+  if (readingAnchor) {
+    const applyAnchor = () => {
+      if (generation === scrollRestoreGeneration) restoreReadingAnchorAfterLayout(readingAnchor)
+    }
+    window.setTimeout(applyAnchor, 50)
+    window.setTimeout(applyAnchor, 150)
+    window.setTimeout(applyAnchor, 300)
+    if (document.fonts) void document.fonts.ready.then(applyAnchor)
   }
 }
 
@@ -539,10 +633,23 @@ function bindEditorEvents(targetEditor: typeof editor): void {
 bindEditorEvents(editor)
 function markSourceChanged(documentChanged: boolean): void {
   if (documentChanged) {
+    if (sourceEditorStateFrame) {
+      window.cancelAnimationFrame(sourceEditorStateFrame)
+      sourceEditorStateFrame = 0
+    }
     revision += 1
     sendDirtyState()
+    sendEditorState()
+    return
   }
-  sendEditorState()
+  // SelectionChanged is sent immediately so the host can keep cursor state in
+  // sync. The heavier command/status payload is coalesced to one update per
+  // frame; this avoids rescanning a large selected range for every mousemove.
+  if (sourceEditorStateFrame) return
+  sourceEditorStateFrame = window.requestAnimationFrame(() => {
+    sourceEditorStateFrame = 0
+    sendEditorState()
+  })
 }
 
 function sendSourceSelection(from: number, to: number): void {
@@ -1112,6 +1219,7 @@ async function handleMessage(value: unknown): Promise<void> {
         visualSelection?: { from?: unknown; to?: unknown }
         sourceSelection?: { from?: unknown; to?: unknown }
         scrollTop?: unknown
+        readingAnchor?: unknown
         restoreViewState?: unknown
       }
       if (typeof payload?.markdown !== 'string') {
@@ -1182,7 +1290,13 @@ async function handleMessage(value: unknown): Promise<void> {
         reportedContentDirty = true
         send('dirtyChanged', { dirty: true })
       }
-      restoreEditorScrollTopAfterLayout(restoreViewState ? payload.scrollTop : 0)
+      const readingAnchor = isReadingAnchorInput(payload.readingAnchor)
+        ? normalizeReadingAnchor(payload.readingAnchor)
+        : null
+      restoreEditorScrollTopAfterLayout(
+        restoreViewState ? payload.scrollTop : 0,
+        restoreViewState ? readingAnchor : null,
+      )
       updateBlockHandleOverlay()
       sendOutline()
       sendEditorState()
@@ -1199,6 +1313,9 @@ async function handleMessage(value: unknown): Promise<void> {
       if (typeof payload.scrollTop === 'number' && payload.scrollTop >= 0) {
         if (sourceMode) sourceEditor?.setScrollTop(payload.scrollTop)
         else restoreEditorScrollTop(payload.scrollTop)
+      }
+      if (isReadingAnchorInput(payload.readingAnchor)) {
+        restoreReadingAnchorAfterLayout(normalizeReadingAnchor(payload.readingAnchor))
       }
       break
     }
@@ -1248,7 +1365,11 @@ async function handleMessage(value: unknown): Promise<void> {
       break
     }
     case 'requestSnapshot':
-      send('snapshot', { markdown: getActiveMarkdown(), scrollTop: getEditorScrollTop() }, message.requestId)
+      send('snapshot', {
+        markdown: getActiveMarkdown(),
+        scrollTop: getEditorScrollTop(),
+        readingAnchor: captureReadingAnchor(),
+      }, message.requestId)
       break
     case 'markSaved': {
       const payload = message.payload as { markdown?: unknown }
@@ -1374,6 +1495,11 @@ async function handleMessage(value: unknown): Promise<void> {
         }
         if (payload.command === 'setAutoHideScrollbar') {
           applyAutoHideScrollbar(payload.text === '1')
+          if (message.requestId) send('commandResult', { success: true }, message.requestId)
+          break
+        }
+        if (payload.command === 'setReadOnly') {
+          setReadOnly(payload.text === '1')
           if (message.requestId) send('commandResult', { success: true }, message.requestId)
           break
         }
@@ -1580,6 +1706,25 @@ if (hostCapabilities.installsFrontendWheelHandler) {
 }
 
 const applyAutoHideScrollbar = readingBehavior.setAutoHideScrollbar
+
+function setReadOnly(enabled: boolean): void {
+  if (readOnly === enabled) return
+  readOnly = enabled
+  if (sourceMode && sourceEditor) sourceEditor.setReadOnly(enabled)
+  if (!sourceMode && editor.isEditable === enabled) {
+    editor.setEditable(!enabled, false)
+  }
+  if (!enabled) {
+    if (editorFocusMode && !sourceMode) setEditorFocusMode(editor, true)
+    readingBehavior.setTypewriter(
+      editorTypewriterMode && !sourceMode,
+      false,
+    )
+  }
+  updateCaretVisibility()
+  updateBlockHandleOverlay()
+  sendEditorState()
+}
 
 let markleafLanguage = 'zh-Hans'
 

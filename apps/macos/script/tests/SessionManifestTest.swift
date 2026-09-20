@@ -12,6 +12,24 @@ var diagnostics: [String] = []
 let decoded = SessionManifestCodec.decode(data, diagnostics: &diagnostics)
 expect(decoded == manifest, "roundtrip keeps every field")
 expect(diagnostics.isEmpty, "clean decode reports no diagnostics")
+let readingTab = SessionTabRecord(
+    tabID: "tab-2", path: "/tmp/B.md", title: "B.md", untitledSequence: nil,
+    isDirty: false, revision: 4, encoding: "UTF-8", newLine: "LF",
+    fingerprintModificationSeconds: nil, fingerprintSize: nil, cursorPosition: nil,
+    selectionAnchor: nil, selectionHead: nil, visualSelectionFrom: nil,
+    visualSelectionTo: nil, sourceSelectionFrom: nil, sourceSelectionTo: nil,
+    scrollTop: 260,
+    readingAnchor: ReadingAnchor(kind: .visual, ordinal: 4, total: 24, token: "target", fraction: 0.25),
+    snapshotFileName: nil
+)
+var readingWindow = window
+readingWindow.tabs = [tab, readingTab]
+var readingManifest = manifest
+readingManifest.windows = [readingWindow]
+diagnostics = []
+let readingData = try SessionManifestCodec.encode(readingManifest)
+let decodedReading = SessionManifestCodec.decode(readingData, diagnostics: &diagnostics)
+expect(decodedReading?.windows.first?.tabs.last?.readingAnchor == readingTab.readingAnchor, "reading anchor roundtrips")
 var future = manifest; future.schemaVersion = 999
 diagnostics = []
 let futureData = try SessionManifestCodec.encode(future)

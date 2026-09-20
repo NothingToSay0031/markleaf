@@ -14,6 +14,7 @@ const READ_ONLY_ALLOWED_COMMANDS = new Set([
   'setAutoConvertUnsafeEmphasis',
   'setMarkdownEditingSettings',
   'setAutoHideScrollbar',
+  'setReadOnly',
   'setEditorFocusMode',
   'setEditorTypewriterMode',
   'setBlockHandleVisible',

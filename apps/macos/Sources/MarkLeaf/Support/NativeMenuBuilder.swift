@@ -288,6 +288,7 @@ final class NativeMenuBuilder {
             key: "f",
             mask: [.command, .shift]
         ))
+        menu.addItem(commandItem(L10n.t("只读模式"), "toggleReadOnlyMode"))
         menu.addItem(.separator())
 
         // 缩放（对齐 Windows fccc7ad：缩放菜单从外观移到视图）
@@ -491,6 +492,17 @@ final class MenuRouter: NSObject, NSMenuItemValidation, NSMenuDelegate {
         case "toggleFocusMode":
             menuItem.state = AppWindowManager.shared.activeWindowController?.isFocusMode == true ? .on : .off
             return AppWindowManager.shared.activeWindowController != nil
+        case "toggleReadOnlyMode":
+            guard let session else { return false }
+            menuItem.state = session.isReadOnly ? .on : .off
+            let fileURLIsWritable = session.documentURL.map { url in
+                FileManager.default.isWritableFile(atPath: url.path)
+            } ?? true
+            return ReadOnlyModePolicy.action(
+                currentReadOnly: session.isReadOnly,
+                isDirty: session.isDirty,
+                fileURLIsWritable: fileURLIsWritable
+            ) != .blockedFileNotWritable
         case "restoreClosedTab":
             return AppWindowManager.shared.canRestoreClosedTab
         case "tabNext", "closeCurrentTab", "closeOtherTabs",
@@ -637,6 +649,8 @@ final class MenuRouter: NSObject, NSMenuItemValidation, NSMenuDelegate {
             NativeMenuBuilder.refreshIfNeeded()
         case "toggleFocusMode":
             AppWindowManager.shared.activeWindowController?.toggleFocusMode()
+        case "toggleReadOnlyMode":
+            session?.toggleReadOnlyMode()
         case "learnMarkdown":
             if let url = URL(string: "https://markdown.com.cn/basic-syntax/index.html") {
                 NSWorkspace.shared.open(url)
@@ -903,6 +917,7 @@ extension EditorSession {
         case "listView": setWorkspaceListMode(true)
         case "toggleStatusBar": toggleStatusBar()
         case "sourceMode": toggleSourceMode()
+        case "toggleReadOnlyMode": toggleReadOnlyMode()
         case "zoomIn": zoomIn()
         case "zoomOut": zoomOut()
         case "resetZoom": resetZoom()
