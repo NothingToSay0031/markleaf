@@ -422,7 +422,10 @@ function sendWithAdditionalObjects(
 }
 
 function sendOutline(): void {
-  send('outlineChanged', { headings: sourceMode ? [] : getDocumentOutline(editor) })
+  const headings = sourceMode
+    ? sourceEditor?.getSourceChapters() ?? []
+    : getDocumentOutline(editor)
+  send('outlineChanged', { headings })
 }
 
 function scheduleOutline(): void {
@@ -439,11 +442,19 @@ function sendOutlineSelection(position: number | null): void {
 }
 
 function sendOutlineSelectionFromCursor(): void {
-  sendOutlineSelection(sourceMode ? null : getActiveOutlinePosition(editor, 'cursor'))
+  sendOutlineSelection(
+    sourceMode
+      ? sourceEditor?.getActiveSourceChapterPosition() ?? null
+      : getActiveOutlinePosition(editor, 'cursor'),
+  )
 }
 
 function sendOutlineSelectionFromScroll(): void {
-  sendOutlineSelection(sourceMode ? null : getActiveOutlinePosition(editor, 'scroll'))
+  sendOutlineSelection(
+    sourceMode
+      ? sourceEditor?.getActiveSourceChapterPosition() ?? null
+      : getActiveOutlinePosition(editor, 'scroll'),
+  )
 }
 
 function sendCommandState(): void {
@@ -541,6 +552,7 @@ function markSourceChanged(documentChanged: boolean): void {
   if (documentChanged) {
     revision += 1
     sendDirtyState()
+    scheduleOutline()
   }
   sendEditorState()
 }
@@ -1512,6 +1524,8 @@ async function handleMessage(value: unknown): Promise<void> {
               ? sourceEditor?.insertMermaidCodeBlock() ?? false
             : payload.command === 'selectAll'
                 ? sourceEditor?.selectAll() ?? false
+            : payload.command === 'scrollToPosition' && commandText !== undefined
+                ? sourceEditor?.gotoSourcePosition(Number(commandText)) ?? false
                 : false
           : payload.command === 'pasteMarkdown' && commandText !== undefined
             ? (() => {

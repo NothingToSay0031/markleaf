@@ -73,6 +73,8 @@ export type SourceEditorStatus = {
   column: number
 }
 
+export type SourceChapter = { level: number; text: string; position: number }
+
 type UnsafeEmphasisMatch = {
   from: number
   to: number
@@ -120,6 +122,7 @@ export class SourceEditor {
   private readonly detectUnsafeEmphasisEnabled: boolean
   private readonly onSelectionChanged?: (from: number, to: number) => void
   private readonly pendingUnsafeEmphasis = new Map<string, UnsafeEmphasisMatch>()
+  private cachedSourceChapters: SourceChapter[] | null = null
 
   constructor(
     parent: HTMLElement,
@@ -178,6 +181,7 @@ export class SourceEditor {
       EditorState.tabSize.of(width),
       indentUnit.of(' '.repeat(width)),
       EditorView.updateListener.of(update => {
+        if (update.docChanged) this.cachedSourceChapters = null
         if (update.docChanged || update.selectionSet) this.onChange(update.docChanged)
         if (update.docChanged || update.selectionSet) {
           const selection = update.state.selection.main
@@ -236,6 +240,56 @@ export class SourceEditor {
 
   setScrollTop(top: number): void {
     this.view.scrollDOM.scrollTop = Math.max(0, top)
+  }
+
+  getSourceChapters(): SourceChapter[] {
+    if (this.cachedSourceChapters) return this.cachedSourceChapters
+    const chapters: SourceChapter[] = []
+    let inFence = false
+
+    for (let lineNumber = 1; lineNumber <= this.view.state.doc.lines; lineNumber += 1) {
+      const line = this.view.state.doc.line(lineNumber)
+      const trimmed = line.text.trim()
+      if (isFenceLine(trimmed)) {
+        inFence = !inFence
+        continue
+      }
+      if (inFence || !trimmed) continue
+
+      const heading = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(trimmed)
+      const chapter = /^(第\s*[0-9〇零一二三四五六七八九十百千]+\s*[章节回篇卷])(?:[\s:：、.]+(.+))?$/i.exec(trimmed)
+      const englishChapter = /^(chapter|section)\s+\d+(?:\.\d+)*\b(.*)$/i.exec(trimmed)
+      if (!heading && !chapter && !englishChapter) continue
+
+      const level = heading?.[1] ? heading[1].length : 1
+      const marker = chapter?.[1] ?? ''
+      const suffix = chapter?.[2] ?? englishChapter?.[2] ?? ''
+      const text = (heading?.[2] ?? `${marker}${suffix ? ` ${suffix.trim()}` : ''}`).trim()
+      chapters.push({ level, text, position: line.from })
+    }
+
+    this.cachedSourceChapters = chapters
+    return chapters
+  }
+
+  getActiveSourceChapterPosition(): number | null {
+    const from = this.view.state.selection.main.from
+    let active: number | null = null
+    for (const chapter of this.getSourceChapters()) {
+      if (chapter.position <= from) active = chapter.position
+      else break
+    }
+    return active
+  }
+
+  gotoSourceChapter(chapter: SourceChapter): void {
+    this.gotoSourcePosition(chapter.position)
+  }
+
+  gotoSourcePosition(position: number): boolean {
+    if (!Number.isFinite(position)) return false
+    this.setSelection(position)
+    return true
   }
 
   setSelectionToRenderedLineEnd(lineNumber: number, center = false): void {

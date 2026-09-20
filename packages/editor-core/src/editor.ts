@@ -4510,6 +4510,40 @@ function markdownInlineToHtmlText(markdown: string): string {
 export type FindResult = { current: number; total: number }
 export type SelectionExport = { text: string; markdown: string; html: string }
 
+function semanticSelectionText(content: any, from: number, to: number, blockSeparator: string): string {
+  let text = ''
+  let firstBlock = true
+  content.nodesBetween(from, to, (node: any, position: number) => {
+    let nodeText = ''
+    const nodeName = node.type?.name
+
+    if (node.isText) {
+      nodeText = node.text.slice(Math.max(from, position) - position, to - position)
+    } else if (nodeName === 'footnoteReference') {
+      nodeText = `[${node.attrs?.label ?? ''}]`
+    } else if (node.isTextblock) {
+      // Footnote definitions render their Markdown prefix through a hidden
+      // widget; normalize it so plain-text copy remains directly readable.
+      const definition = node.textContent.match(/^\u2060\[\^([^\]]+)\]:\s*(.*)$/)
+      if (definition) nodeText = `[${definition[1]}]: ${definition[2] ?? ''}`
+    } else if (nodeName === 'taskItem') {
+      nodeText = `${node.attrs?.checked ? '[x] ' : '[ ] '}${node.textContent}`
+    }
+
+    if (node.isBlock && (nodeText || node.isTextblock)) {
+      if (firstBlock) firstBlock = false
+      else text += blockSeparator
+    }
+    text += nodeText
+
+    // These nodes format their entire subtree; visiting children would lose
+    // task state or duplicate the visible label.
+    if (nodeName === 'taskItem' || nodeName === 'footnoteReference') return false
+    return undefined
+  })
+  return text
+}
+
 export function exportEditorSelection(editor: Editor): SelectionExport {
   // 公式/图表浮层源码框是普通 DOM 文本，没有 ProseMirror 选区：
   // 导出只取用户在源码框里真正选中的片段，且不改变焦点或选区。
@@ -4529,7 +4563,7 @@ export function exportEditorSelection(editor: Editor): SelectionExport {
   const markdown = getMarkdown(selectionEditor)
   selectionEditor.destroy()
   return {
-    text: slice.content.textBetween(0, slice.content.size, '\n', '\n'),
+    text: semanticSelectionText(slice.content, 0, slice.content.size, '\n'),
     markdown,
     html: container.innerHTML,
   }
