@@ -42,7 +42,7 @@ echo "[package] preparing EditorWeb and runtime resources"
 "$MACOS_DIR/script/prepare_resources.sh"
 
 echo "[package] building $APP_NAME $APP_VERSION ($ARCH)"
-swift build ${SWIFT_BUILD_FLAGS[@]+"${SWIFT_BUILD_FLAGS[@]}"} --package-path "$MACOS_DIR" -c release -Xswiftc -g --product "$APP_NAME" --product MarkLeafQuickLook
+swift build ${SWIFT_BUILD_FLAGS[@]+"${SWIFT_BUILD_FLAGS[@]}"} --package-path "$MACOS_DIR" -c release -Xswiftc -g
 BUILD_BIN="$(swift build ${SWIFT_BUILD_FLAGS[@]+"${SWIFT_BUILD_FLAGS[@]}"} --package-path "$MACOS_DIR" -c release --show-bin-path)/$APP_NAME"
 
 echo '[package] assembling application bundle'
@@ -68,7 +68,7 @@ for icon in AppIcon.icns FileIcon.icns; do
     fi
 done
 
-MARKLEAF_QUICKLOOK_CONFIG=release bash "$HERE/quicklook/stage-extension.sh" "$MACOS_DIR" "$APP_STAGE"
+MARKLEAF_QUICKLOOK_CONFIG=release bash "$MACOS_DIR/script/quicklook/stage-extension.sh" "$MACOS_DIR" "$APP_STAGE"
 
 xattr -cr "$APP_STAGE"
 codesign --force --sign - "$APP_STAGE" >/dev/null
