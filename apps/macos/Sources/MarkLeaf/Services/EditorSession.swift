@@ -105,6 +105,7 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
     private(set) var sourceSelectionFrom: Int?
     private(set) var sourceSelectionTo: Int?
     private(set) var scrollTop: Double = 0
+    private(set) var readingAnchor: ReadingAnchor?
     private(set) var mathInline = false
     private(set) var mathBlock = false
     private(set) var mathLatex: String?
@@ -162,6 +163,39 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
         "editTableCaption", "editImageCaption", "insertFootnote", "resetFootnoteLabel",
         "goToFootnoteReference", "clearFootnoteReferences", "deleteFootnote",
     ]).union(EditorPastePolicy.modifyingCommands)
+
+    /// 切换当前标签页的只读模式。脏文档先复用统一的保存/放弃处置流程；
+    /// 权限只读的磁盘文件不能仅靠菜单恢复可写。
+    func toggleReadOnlyMode() {
+        guard isReady, webView != nil else { return }
+        let fileURLIsWritable = documentURL.map { url in
+            FileManager.default.isWritableFile(atPath: url.path)
+        } ?? true
+
+        switch ReadOnlyModePolicy.action(
+            currentReadOnly: isReadOnly,
+            isDirty: isDirty,
+            fileURLIsWritable: fileURLIsWritable
+        ) {
+        case .blockedFileNotWritable:
+            statusText = L10n.t("文件系统权限为只读")
+            return
+        case .resolveUnsavedChanges:
+            requestDisposition(for: .replaceDocument) { [weak self] result in
+                guard result == .proceed, let self else { return }
+                self.applyReadOnlyMode(true)
+            }
+        case .toggle:
+            applyReadOnlyMode(!isReadOnly)
+        }
+    }
+
+    private func applyReadOnlyMode(_ enabled: Bool) {
+        execute("setReadOnly", text: enabled ? "1" : "0")
+        isReadOnly = enabled
+        statusText = L10n.t(enabled ? "只读模式已开启" : "只读模式已关闭")
+        NativeMenuBuilder.refreshIfNeeded()
+    }
 
     // 工作区 / 大纲
     /// 窗口共享工作区（构造时注入；缺省自建，等价旧行为）。
@@ -298,6 +332,7 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
     private var pendingInitialSelection: PendingDocumentSelection?
     private var pendingInitialDetachedDocument: RestartDocument?
     var pendingRestoreScrollTop: Double?
+    var pendingRestoreReadingAnchor: ReadingAnchor?
     private struct RestartDocument {
         let markdown: String
         let fileURL: URL?
@@ -402,6 +437,12 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
                     self?.sendRestoreViewport(scrollTop: scrollTop, selectionFrom: nil, selectionTo: nil)
                 }
             }
+            if let readingAnchor = pendingRestoreReadingAnchor {
+                pendingRestoreReadingAnchor = nil
+                DispatchQueue.main.async { [weak self] in
+                    self?.send("restoreViewport", payload: ["readingAnchor": readingAnchor.jsonValue])
+                }
+            }
             if let query = pendingWorkspaceSearchQuery {
                 pendingWorkspaceSearchQuery = nil
                 DispatchQueue.main.async { [weak self] in
@@ -422,9 +463,11 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
             let snapshot = EditorSnapshot(
                 markdown: markdown,
                 revision: messageRevision ?? revision,
-                scrollTop: EditorScrollSnapshotPolicy.restoreValue(rawValue: payload?["scrollTop"])
+                scrollTop: EditorScrollSnapshotPolicy.restoreValue(rawValue: payload?["scrollTop"]),
+                readingAnchor: ReadingAnchor.from(json: payload?["readingAnchor"])
             )
             scrollTop = snapshot.scrollTop
+            readingAnchor = snapshot.readingAnchor
             if snapshotRequests.completeNext(.success(snapshot)) {
                 send("requestSnapshot")
             }
@@ -863,6 +906,7 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
         documentKind: NewDocumentKind? = nil,
         initialDirty: Bool = false,
         scrollTop: Double = 0,
+        readingAnchor: ReadingAnchor? = nil,
         restoreViewState: Bool = true,
         visualSelectionFrom: Int? = nil,
         visualSelectionTo: Int? = nil,
@@ -898,6 +942,7 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
         self.sourceSelectionFrom = sourceSelectionFrom
         self.sourceSelectionTo = sourceSelectionTo
         self.scrollTop = scrollTop
+        self.readingAnchor = readingAnchor
         statusText = fileURL?.lastPathComponent ?? L10n.t("未命名")
         if readOnly {
             stopExternalChangeWatch()
@@ -918,6 +963,7 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
             "scrollTop": scrollTop,
             "restoreViewState": restoreViewState,
         ]
+        if let readingAnchor { loadPayload["readingAnchor"] = readingAnchor.jsonValue }
         if let visualSelectionFrom {
             loadPayload["visualSelection"] = ["from": visualSelectionFrom, "to": visualSelectionTo ?? visualSelectionFrom]
         }
@@ -927,10 +973,11 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
         send("loadDocument", payload: loadPayload)
     }
 
-    func sendRestoreViewport(scrollTop: Double?, selectionFrom: Int?, selectionTo: Int?) {
+    func sendRestoreViewport(scrollTop: Double?, selectionFrom: Int?, selectionTo: Int?, readingAnchor: ReadingAnchor? = nil) {
         var payload: [String: Any] = [:]
         if let scrollTop { payload["scrollTop"] = scrollTop }
         if let from = selectionFrom, let to = selectionTo { payload["selection"] = ["from": from, "to": to] }
+        if let readingAnchor { payload["readingAnchor"] = readingAnchor.jsonValue }
         guard !payload.isEmpty else { return }
         send("restoreViewport", payload: payload)
     }
@@ -2706,6 +2753,19 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
         }
         if isReady {
             runInitialLoad()
+        }
+    }
+
+    /// 手动新建窗口使用的空白文档意图；不参与启动动作或会话恢复。
+    func openBlankDocument() {
+        startFollowingSystemAppearance()
+        pendingInitialOpenPath = nil
+        pendingInitialPreparedDocument = nil
+        pendingInitialSelection = nil
+        pendingInitialDetachedDocument = nil
+        useStartupAction = false
+        if isReady {
+            newDocument()
         }
     }
 

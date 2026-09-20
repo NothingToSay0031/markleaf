@@ -58,6 +58,25 @@ describe('editor protocol validation', () => {
     })).toBe(true)
   })
 
+  it('validates reading anchors on viewport restoration', () => {
+    expect(isHostMessage({
+      protocolVersion,
+      type: 'restoreViewport',
+      documentId: 'document-id',
+      revision: 4,
+      payload: {
+        readingAnchor: { kind: 'visual', ordinal: 2, total: 8, token: 'heading', fraction: 0.5 },
+      },
+    })).toBe(true)
+    expect(isHostMessage({
+      protocolVersion,
+      type: 'restoreViewport',
+      documentId: 'document-id',
+      revision: 4,
+      payload: { readingAnchor: { kind: 'visual', ordinal: 2 } },
+    })).toBe(false)
+  })
+
   it('accepts the saved-content baseline used by undo-aware dirty state', () => {
     expect(isHostMessage({
       protocolVersion,

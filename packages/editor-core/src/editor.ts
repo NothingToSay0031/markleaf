@@ -4510,17 +4510,28 @@ function markdownInlineToHtmlText(markdown: string): string {
 export type FindResult = { current: number; total: number }
 export type SelectionExport = { text: string; markdown: string; html: string }
 
+/**
+ * Extract semantic selection text for formulas, tables, task lists, and
+ * footnotes. ProseMirror's textBetween intentionally skips non-leaf nodes,
+ * which loses task state, footnote labels, and formula delimiters.
+ */
 function semanticSelectionText(content: any, from: number, to: number, blockSeparator: string): string {
   let text = ''
   let firstBlock = true
   content.nodesBetween(from, to, (node: any, position: number) => {
     let nodeText = ''
     const nodeName = node.type?.name
-
     if (node.isText) {
       nodeText = node.text.slice(Math.max(from, position) - position, to - position)
     } else if (nodeName === 'footnoteReference') {
       nodeText = `[${node.attrs?.label ?? ''}]`
+    } else if (nodeName === 'mathInline') {
+      nodeText = `$${node.textContent || '...'}$`
+    } else if (nodeName === 'mathBlock') {
+      const latex = String(node.textContent || '').trim() || '...'
+      nodeText = `$$\n${latex}\n$$`
+    } else if (nodeName === 'table') {
+      nodeText = semanticTableText(node)
     } else if (node.isTextblock) {
       // Footnote definitions render their Markdown prefix through a hidden
       // widget; normalize it so plain-text copy remains directly readable.
@@ -4528,6 +4539,10 @@ function semanticSelectionText(content: any, from: number, to: number, blockSepa
       if (definition) nodeText = `[${definition[1]}]: ${definition[2] ?? ''}`
     } else if (nodeName === 'taskItem') {
       nodeText = `${node.attrs?.checked ? '[x] ' : '[ ] '}${node.textContent}`
+    } else if (node.isLeaf) {
+      // Keep the existing plain-text behavior for images, diagrams and other
+      // leaf nodes: they have no textual fallback in a plain copy.
+      nodeText = ''
     }
 
     if (node.isBlock && (nodeText || node.isTextblock)) {
@@ -4536,14 +4551,27 @@ function semanticSelectionText(content: any, from: number, to: number, blockSepa
     }
     text += nodeText
 
-    // These nodes format their entire subtree; visiting children would lose
-    // task state or duplicate the visible label.
-    if (nodeName === 'taskItem' || nodeName === 'footnoteReference') return false
+    // Formula nodes own their text child; do not visit it a second time.
+    if (['footnoteReference', 'mathInline', 'mathBlock', 'table', 'taskItem'].includes(nodeName)) return false
     return undefined
   })
   return text
 }
 
+function semanticTableText(table: any): string {
+  const rows: string[] = []
+  table.forEach((row: any) => {
+    const cells: string[] = []
+    row.forEach((cell: any) => {
+      const value = semanticSelectionText(cell.content, 0, cell.content.size, ' ')
+        .replace(/\s*\n\s*/gu, ' ')
+        .trim()
+      cells.push(value)
+    })
+    rows.push(cells.join('\t'))
+  })
+  return rows.join('\n')
+}
 export function exportEditorSelection(editor: Editor): SelectionExport {
   // 公式/图表浮层源码框是普通 DOM 文本，没有 ProseMirror 选区：
   // 导出只取用户在源码框里真正选中的片段，且不改变焦点或选区。

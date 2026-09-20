@@ -31,6 +31,7 @@ final class DocumentTab {
     var sourceSelectionFrom: Int?
     var sourceSelectionTo: Int?
     var scrollTop: Double?
+    var readingAnchor: ReadingAnchor?
     var snapshotFileName: String?
     var lastActivatedAt = Date()
     var isSuspended = false

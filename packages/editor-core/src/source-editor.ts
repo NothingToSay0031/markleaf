@@ -13,7 +13,9 @@ import {
 import { markdown } from '@codemirror/lang-markdown'
 import { HighlightStyle, indentUnit, syntaxHighlighting, syntaxTree } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
-import { EditorState, RangeSetBuilder, StateEffect } from '@codemirror/state'
+import { Compartment, EditorState, RangeSetBuilder, StateEffect } from '@codemirror/state'
+import type { ReadingAnchor, ReadingAnchorInput } from './reading-anchor'
+import { normalizeReadingAnchor, resolveReadingAnchorOrdinal } from './reading-anchor'
 import {
   Decoration,
   DecorationSet,
@@ -117,7 +119,9 @@ function buildSelectionDecorations(view: EditorView): DecorationSet {
 export class SourceEditor {
   readonly view: EditorView
   private readonly onChange: (documentChanged: boolean) => void
-  private readonly readOnly: boolean
+  private documentStatistics: Omit<SourceEditorStatus, 'characterCount' | 'selectedCharacterCount' | 'line' | 'column' | 'blockType'>
+  private readOnly: boolean
+  private readonly readOnlyCompartment = new Compartment()
   private readonly onUnsafeEmphasis?: (request: UnsafeEmphasisRequest) => void
   private readonly detectUnsafeEmphasisEnabled: boolean
   private readonly onSelectionChanged?: (from: number, to: number) => void
@@ -135,6 +139,7 @@ export class SourceEditor {
     onSelectionChanged?: (from: number, to: number) => void,
   ) {
     this.onChange = onChange
+    this.documentStatistics = getSourceDocumentStatistics(content)
     this.readOnly = readOnly
     this.onUnsafeEmphasis = onUnsafeEmphasis
     this.detectUnsafeEmphasisEnabled = detectUnsafeEmphasis
@@ -151,7 +156,7 @@ export class SourceEditor {
   private buildExtensions(indentWidth: number) {
     const width = Math.max(1, Math.min(8, Math.round(indentWidth) || 2))
     return [
-      ...(this.readOnly ? [EditorState.readOnly.of(true)] : []),
+      this.readOnlyCompartment.of(EditorState.readOnly.of(this.readOnly)),
       lineNumbers(),
       themedSourceSelection,
       highlightActiveLine(),
@@ -182,6 +187,9 @@ export class SourceEditor {
       indentUnit.of(' '.repeat(width)),
       EditorView.updateListener.of(update => {
         if (update.docChanged) this.cachedSourceChapters = null
+        if (update.docChanged) {
+          this.documentStatistics = getSourceDocumentStatistics(update.state.doc.toString())
+        }
         if (update.docChanged || update.selectionSet) this.onChange(update.docChanged)
         if (update.docChanged || update.selectionSet) {
           const selection = update.state.selection.main
@@ -236,6 +244,16 @@ export class SourceEditor {
     const head = Math.max(0, Math.min(length, Math.trunc(to ?? from)))
     this.view.dispatch({ selection: { anchor, head }, scrollIntoView: true })
     this.focus()
+  }
+
+  setReadOnly(enabled: boolean): void {
+    if (this.readOnly === enabled) return
+    this.readOnly = enabled
+    this.view.dispatch({
+      effects: this.readOnlyCompartment.reconfigure(
+        EditorState.readOnly.of(enabled),
+      ),
+    })
   }
 
   setScrollTop(top: number): void {
@@ -404,20 +422,51 @@ export class SourceEditor {
     return this.view.state.doc.toString()
   }
 
+  getReadingAnchor(): ReadingAnchor | null {
+    if (this.view.state.doc.lines === 0) return null
+    const scrollTop = this.view.scrollDOM.scrollTop
+    const block = this.view.lineBlockAtHeight(scrollTop + this.view.documentTop)
+    const line = this.view.state.doc.lineAt(block.from)
+    const fraction = block.height > 0
+      ? Math.min(1, Math.max(0, (scrollTop + this.view.documentTop - block.top) / block.height))
+      : 0
+    return normalizeReadingAnchor({
+      kind: 'source',
+      ordinal: line.number - 1,
+      total: this.view.state.doc.lines,
+      token: line.text,
+      fraction,
+    })
+  }
+
+  setReadingAnchor(input: ReadingAnchorInput): void {
+    if (this.view.state.doc.lines === 0) return
+    const anchor = normalizeReadingAnchor(input)
+    const texts = Array.from(
+      { length: this.view.state.doc.lines },
+      (_, index) => this.view.state.doc.line(index + 1).text,
+    )
+    const ordinal = resolveReadingAnchorOrdinal(anchor, texts)
+    const line = this.view.state.doc.line(ordinal + 1)
+    const block = this.view.lineBlockAt(line.from)
+    this.view.scrollDOM.scrollTop = Math.max(
+      0,
+      block.top - this.view.documentTop + anchor.fraction * block.height,
+    )
+  }
+
   getSelectedText(): string {
     const selection = this.view.state.selection.main
     return this.view.state.sliceDoc(selection.from, selection.to)
   }
 
   getStatus(): SourceEditorStatus {
-    const text = this.getText()
-    const documentText = stripLeadingFrontMatter(text)
     const selection = this.view.state.selection.main
     const line = this.view.state.doc.lineAt(selection.from)
     return {
-      characterCount: Array.from(documentText).filter(character => !/\s/u.test(character)).length,
+      characterCount: this.documentStatistics.nonWhitespaceCharacterCount,
       selectedCharacterCount: Array.from(this.getSelectedText()).filter(character => !/\s/u.test(character)).length,
-      ...getSourceDocumentStatistics(text),
+      ...this.documentStatistics,
       blockType: 'paragraph',
       line: line.number,
       column: Array.from(line.text.slice(0, selection.from - line.from)).length + 1,

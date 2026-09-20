@@ -4,6 +4,7 @@ struct EditorSnapshot: Equatable {
     let markdown: String
     let revision: Int64
     var scrollTop: Double = 0
+    var readingAnchor: ReadingAnchor?
 }
 
 final class SnapshotRequestQueue {

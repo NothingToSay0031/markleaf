@@ -1,5 +1,47 @@
 import Foundation
 
+enum ReadingAnchorKind: String, Codable, Equatable {
+    case visual
+    case source
+}
+
+struct ReadingAnchor: Codable, Equatable {
+    let kind: ReadingAnchorKind
+    let ordinal: Int
+    let total: Int
+    let token: String
+    let fraction: Double
+
+    init(kind: ReadingAnchorKind, ordinal: Int, total: Int, token: String, fraction: Double) {
+        self.kind = kind
+        self.ordinal = max(0, ordinal)
+        self.total = max(1, total)
+        self.token = token
+        self.fraction = min(1, max(0, fraction))
+    }
+
+    static func from(json: Any?) -> ReadingAnchor? {
+        guard let values = json as? [String: Any] else { return nil }
+        guard let rawKind = values["kind"] as? String,
+              let kind = ReadingAnchorKind(rawValue: rawKind),
+              let ordinal = values["ordinal"] as? Int,
+              let total = values["total"] as? Int,
+              let token = values["token"] as? String else { return nil }
+        let fraction = (values["fraction"] as? NSNumber)?.doubleValue ?? 0
+        return ReadingAnchor(kind: kind, ordinal: ordinal, total: total, token: token, fraction: fraction)
+    }
+
+    var jsonValue: [String: Any] {
+        [
+            "kind": kind.rawValue,
+            "ordinal": ordinal,
+            "total": total,
+            "token": token,
+            "fraction": fraction,
+        ]
+    }
+}
+
 struct SessionTabRecord: Codable, Equatable {
     var tabID: String
     var path: String?
@@ -19,6 +61,7 @@ struct SessionTabRecord: Codable, Equatable {
     var sourceSelectionFrom: Int? = nil
     var sourceSelectionTo: Int? = nil
     var scrollTop: Double?
+    var readingAnchor: ReadingAnchor?
     var snapshotFileName: String?
 }
 

@@ -53,6 +53,7 @@ export * from './image-resources'
 // ---- 视图行为：选区同步、滚动与缩放 ----
 export * from './dom-selection-sync'
 export * from './native-selection'
+export * from './reading-anchor'
 export * from './scrollbar-motion'
 export * from './zoom-anchor'
 
