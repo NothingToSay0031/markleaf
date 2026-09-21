@@ -836,13 +836,24 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     }
 
     @objc private func clearHistory() {
-        SettingsService.shared.update {
-            $0.recentFiles = []
-            $0.recentFolders = []
-            $0.lastFile = nil
-            $0.lastFolder = nil
+        let alert = NSAlert()
+        alert.messageText = L10n.t("确定要清除历史记录吗？")
+        alert.informativeText = L10n.t("此操作会删除最近的文件和文件夹记录。")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L10n.t("清除"))
+        alert.addButton(withTitle: L10n.t("取消"))
+        // 清除历史同样是不可恢复的数据删除：确认按钮标红。
+        alert.buttons.first?.hasDestructiveAction = true
+        alert.beginSheetModal(for: window!) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            SettingsService.shared.update {
+                $0.recentFiles = []
+                $0.recentFolders = []
+                $0.lastFile = nil
+                $0.lastFolder = nil
+            }
+            self?.infoAlert(L10n.t("历史记录已清除"))
         }
-        infoAlert(L10n.t("历史记录已清除"))
     }
 
     @objc private func openThemeFolder() {
