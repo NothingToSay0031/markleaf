@@ -1616,6 +1616,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
         // 动画只在“侧边栏状态发生变化”时播放（启动/打开文件时状态未变，直接对齐，避免闪烁和重复收起动画）。
         let shouldAnimate = lastAppliedSidebarVisible != nil && lastAppliedSidebarVisible != session.sidebarVisible
+        let sidebarVisibilityChanged = lastAppliedSidebarVisible != nil && lastAppliedSidebarVisible != session.sidebarVisible
         lastAppliedSidebarVisible = session.sidebarVisible
 
         let saved = SidebarLayout.clampedWorkspaceWidth(
@@ -1697,6 +1698,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         sidebarView.selectTab(selectedTabIndex, persist: false)
         sidebarView.setWorkspaceMode(listMode: sidebarSession.workspaceListMode)
         applyDetachedOutlineState()
+        if sidebarVisibilityChanged {
+            sidebarSession.requestOutlineRefresh()
+        }
 
         let showStatusBar = session.statusBarVisible
         let statusBarChanged = lastAppliedStatusBarVisible != showStatusBar

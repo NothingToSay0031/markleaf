@@ -1177,7 +1177,7 @@ async function handleMessage(value: unknown): Promise<void> {
 
   // 文档尚未加载时，宿主的会话 documentId 还是随机占位值，与前端不一致；
   // 此时 applyStyles/setAutoHideScrollbar 等文档无关的偏好推送必须放行。
-  if (message.type !== 'loadDocument' && message.type !== 'setDocumentType' && message.type !== 'applyStyles' && message.type !== 'localizeFindBar'
+    if (message.type !== 'loadDocument' && message.type !== 'setDocumentType' && message.type !== 'applyStyles' && message.type !== 'localizeFindBar' && message.type !== 'refreshOutline'
       && documentLoaded && message.documentId !== documentId) {
     return
   }
@@ -1395,6 +1395,12 @@ async function handleMessage(value: unknown): Promise<void> {
       if (message.requestId && (payload?.action === 'literal' || payload?.action === 'html')) {
         sourceEditor?.resolveUnsafeEmphasis(message.requestId, payload.action)
       }
+      break
+    }
+    case 'refreshOutline': {
+      if (!documentLoaded) break
+      sendOutline()
+      if (message.requestId) send('commandResult', { success: true }, message.requestId)
       break
     }
     case 'command': {

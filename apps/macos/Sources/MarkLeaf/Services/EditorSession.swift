@@ -1344,6 +1344,11 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
         }
     }
 
+    /// 侧边栏显隐后重新同步大纲列表与“大纲 N 项”状态。
+    func requestOutlineRefresh() {
+        send("refreshOutline")
+    }
+
     /// 请求当前内容与滚动偏移，用于标签切换/会话同步。
     func requestScrollStateSnapshot(completion: @escaping (Result<EditorSnapshot, Error>) -> Void = { _ in }) {
         requestVersionedSnapshot(completion: completion)
