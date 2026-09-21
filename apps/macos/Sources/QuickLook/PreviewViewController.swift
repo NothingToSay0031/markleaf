@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import QuickLookUI
 import UniformTypeIdentifiers
 
@@ -28,7 +29,9 @@ final class PreviewViewController: QLPreviewProvider, QLPreviewingController {
 
             let reply = QLPreviewReply(
                 dataOfContentType: .html,
-                contentSize: CGSize(width: 860, height: 640)
+                contentSize: QuickLookPreviewLayout.contentSize(
+                    visible: NSScreen.main?.visibleFrame.size
+                )
             ) { reply in
                 return Data(html.utf8)
             }
@@ -37,7 +40,9 @@ final class PreviewViewController: QLPreviewProvider, QLPreviewingController {
         } catch {
             let reply = QLPreviewReply(
                 dataOfContentType: .html,
-                contentSize: CGSize(width: 860, height: 640)
+                contentSize: QuickLookPreviewLayout.contentSize(
+                    visible: NSScreen.main?.visibleFrame.size
+                )
             ) { _ in
                 Data(QuickLookHTMLRenderer.errorPage(failureMessage(for: error)).utf8)
             }

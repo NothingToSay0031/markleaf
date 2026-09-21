@@ -1006,6 +1006,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ sender: NSApplication,
         hasVisibleWindows flag: Bool
     ) -> Bool {
+        // Debug bundles launched through `open -n` may not receive the normal
+        // Dock activation side effect. Always activate first so a visible
+        // window is brought forward instead of leaving the Dock click silent.
+        NSApp.activate(ignoringOtherApps: true)
         AppWindowManager.shared.handleApplicationReopen(hasVisibleWindows: flag)
         return true
     }

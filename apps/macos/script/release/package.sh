@@ -4,6 +4,32 @@
 
 set -euo pipefail
 
+# Prefer the current stable Xcode SDK so macOS 26/27 AppKit controls receive
+# the native Liquid Glass appearance. Fall back to the beta when necessary;
+# CI or callers may still override it explicitly.
+if [[ -z "${DEVELOPER_DIR:-}" ]]; then
+    for candidate in \
+        "/Applications/Xcode.app/Contents/Developer" \
+        "/Applications/Xcode-beta.app/Contents/Developer"; do
+        if [[ -d "$candidate" ]]; then
+            export DEVELOPER_DIR="$candidate"
+            break
+        fi
+    done
+fi
+
+MACOS_MIN_SYSTEM_VERSION="13.0"
+# Keep macOS 13 as the deployment target while recording the selected Xcode
+# SDK in LC_BUILD_VERSION. AppKit uses that linked SDK boundary for refreshed
+# system appearances such as Liquid Glass.
+SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
+SDK_LINKER_FLAGS=(
+    -Xlinker -platform_version
+    -Xlinker macos
+    -Xlinker "$MACOS_MIN_SYSTEM_VERSION"
+    -Xlinker "$SDK_VERSION"
+)
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MACOS_DIR="$(cd "$HERE/../.." && pwd)"
 REPO_DIR="$(cd "$MACOS_DIR/.." && pwd)"
@@ -42,8 +68,8 @@ echo "[package] preparing EditorWeb and runtime resources"
 "$MACOS_DIR/script/prepare_resources.sh"
 
 echo "[package] building $APP_NAME $APP_VERSION ($ARCH)"
-swift build ${SWIFT_BUILD_FLAGS[@]+"${SWIFT_BUILD_FLAGS[@]}"} --package-path "$MACOS_DIR" -c release -Xswiftc -g
-BUILD_BIN="$(swift build ${SWIFT_BUILD_FLAGS[@]+"${SWIFT_BUILD_FLAGS[@]}"} --package-path "$MACOS_DIR" -c release --show-bin-path)/$APP_NAME"
+swift build ${SWIFT_BUILD_FLAGS[@]+"${SWIFT_BUILD_FLAGS[@]}"} "${SDK_LINKER_FLAGS[@]}" --package-path "$MACOS_DIR" -c release -Xswiftc -g
+BUILD_BIN="$(swift build ${SWIFT_BUILD_FLAGS[@]+"${SWIFT_BUILD_FLAGS[@]}"} "${SDK_LINKER_FLAGS[@]}" --package-path "$MACOS_DIR" -c release --show-bin-path)/$APP_NAME"
 
 echo '[package] assembling application bundle'
 mkdir -p "$APP_STAGE/Contents/MacOS" "$APP_STAGE/Contents/Resources"

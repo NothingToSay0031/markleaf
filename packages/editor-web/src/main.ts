@@ -538,7 +538,7 @@ function sendOutlineSelection(position: number | null): void {
 function sendOutlineSelectionFromCursor(): void {
   sendOutlineSelection(
     sourceMode
-      ? sourceEditor?.getActiveSourceChapterPosition() ?? null
+      ? sourceEditor?.getActiveSourceChapterPosition('cursor') ?? null
       : getActiveOutlinePosition(editor, 'cursor'),
   )
 }
@@ -546,7 +546,7 @@ function sendOutlineSelectionFromCursor(): void {
 function sendOutlineSelectionFromScroll(): void {
   sendOutlineSelection(
     sourceMode
-      ? sourceEditor?.getActiveSourceChapterPosition() ?? null
+      ? sourceEditor?.getActiveSourceChapterPosition('scroll') ?? null
       : getActiveOutlinePosition(editor, 'scroll'),
   )
 }
@@ -1652,6 +1652,13 @@ async function handleMessage(value: unknown): Promise<void> {
                 ? sourceEditor?.selectAll() ?? false
             : payload.command === 'scrollToPosition' && commandText !== undefined
                 ? sourceEditor?.gotoSourcePosition(Number(commandText)) ?? false
+            : payload.command === 'scrollToSourceHeading' && commandText !== undefined
+                ? (() => {
+                    const separator = commandText.indexOf('\t')
+                    const approximate = separator >= 0 ? Number(commandText.slice(0, separator)) : undefined
+                    const headingText = separator >= 0 ? commandText.slice(separator + 1) : commandText
+                    return sourceEditor?.gotoSourceHeading(headingText, Number.isFinite(approximate) ? approximate : undefined) ?? false
+                  })()
                 : false
           : payload.command === 'pasteMarkdown' && commandText !== undefined
             ? (() => {

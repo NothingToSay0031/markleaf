@@ -28,6 +28,7 @@ final class TabBarController: NSView {
     var onTearOff: ((DocumentTabID, NSPoint) -> Void)?
     var statusProvider: ((DocumentTabID) -> (isReadOnly: Bool, hasExternalChange: Bool))?
     private let stack = NSStackView()
+    private let glassSurface = GlassSurfaceView(style: .regular)
     private let newTabButton = NSButton()
     private let overflowButton = NSPopUpButton(frame: .zero, pullsDown: false)
     private unowned let tabStore: TabStore
@@ -67,15 +68,23 @@ final class TabBarController: NSView {
         stack.spacing = 2
         stack.edgeInsets = NSEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-        stackLeading = stack.leadingAnchor.constraint(equalTo: leadingAnchor)
+        glassSurface.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(glassSurface)
+        glassSurface.setContent(stack)
+        // In the full-size window layout the backing can reach the title bar,
+        // while cells must avoid the traffic-light strip when the sidebar is hidden.
+        stackLeading = stack.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor)
         configureNewTabButton()
         configureOverflowButton()
         NSLayoutConstraint.activate([
+            glassSurface.leadingAnchor.constraint(equalTo: leadingAnchor),
+            glassSurface.trailingAnchor.constraint(equalTo: newTabButton.leadingAnchor, constant: -4),
+            glassSurface.topAnchor.constraint(equalTo: topAnchor),
+            glassSurface.bottomAnchor.constraint(equalTo: bottomAnchor),
             stackLeading,
-            stack.topAnchor.constraint(equalTo: topAnchor),
-            stack.trailingAnchor.constraint(equalTo: newTabButton.leadingAnchor, constant: -4),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+            stack.topAnchor.constraint(equalTo: glassSurface.topAnchor),
+            stack.trailingAnchor.constraint(equalTo: glassSurface.trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: glassSurface.bottomAnchor),
         ])
 
         overflowWidth = overflowButton.widthAnchor.constraint(equalToConstant: 0)
@@ -706,8 +715,12 @@ final class TabCellView: NSView {
         addSubview(dirtyDot)
         addSubview(statusLabel)
         addSubview(closeButton)
+        let cellHeight = heightAnchor.constraint(equalToConstant: 24)
+        // Collapsing a hidden tab strip to zero must win over the intrinsic cell
+        // height. The cell height remains effectively required while visible.
+        cellHeight.priority = .required - 1
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 24),
+            cellHeight,
             titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
             titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: dirtyDot.leadingAnchor, constant: -6),
@@ -859,16 +872,13 @@ final class TabCellView: NSView {
 
         let applyColors = { [weak self] in
             guard let self else { return }
-            var backgroundColor = NSColor.clear.cgColor
             self.effectiveAppearance.performAsCurrentDrawingAppearance {
-                if self.isActive {
-                    backgroundColor = NSColor.controlBackgroundColor.cgColor
-                }
+                let backgroundColor = EditorTabStripMaterial.selectionBackgroundColor(isActive: self.isActive)
+                self.layer?.backgroundColor = backgroundColor
             }
-            self.layer?.backgroundColor = backgroundColor
             self.titleLabel.textColor = recoveryUnavailable
                 ? .systemOrange
-                : (isActive ? .labelColor : .secondaryLabelColor)
+                : EditorTabStripMaterial.titleColor(isActive: isActive)
         }
         self.colorConfiguration = applyColors
         guard animationDuration > 0 else { applyColors(); return }

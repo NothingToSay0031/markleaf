@@ -24,6 +24,7 @@ const READ_ONLY_ALLOWED_COMMANDS = new Set([
   'exportDocument',
   'selectAll',
   'scrollToPosition',
+  'scrollToSourceHeading',
   'goToFootnoteReference',
   'setBlockHighlight',
   'clearBlockHighlight',

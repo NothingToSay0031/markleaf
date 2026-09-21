@@ -22,6 +22,7 @@ final class StatusBarSettingsWindowController: NSWindowController {
             backing: .buffered,
             defer: false)
         window.title = L10n.t("自定义状态栏")
+        FloatingWindowChrome.configure(window, classification: .navigation)
         window.center()
         super.init(window: window)
         buildContent()

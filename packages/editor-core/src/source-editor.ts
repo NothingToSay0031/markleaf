@@ -290,8 +290,10 @@ export class SourceEditor {
     return chapters
   }
 
-  getActiveSourceChapterPosition(): number | null {
-    const from = this.view.state.selection.main.from
+  getActiveSourceChapterPosition(source: 'cursor' | 'scroll' = 'cursor'): number | null {
+    const from = source === 'scroll'
+      ? this.view.lineBlockAtHeight(this.view.scrollDOM.scrollTop + this.view.documentTop).from
+      : this.view.state.selection.main.from
     let active: number | null = null
     for (const chapter of this.getSourceChapters()) {
       if (chapter.position <= from) active = chapter.position
@@ -304,10 +306,61 @@ export class SourceEditor {
     this.gotoSourcePosition(chapter.position)
   }
 
+  gotoSourceHeading(text: string, approximatePosition?: number): boolean {
+    const chapters = this.getSourceChapters().filter(chapter => chapter.text === text)
+    if (chapters.length === 0) return false
+    const chapter = chapters.reduce((nearest, candidate) => {
+      if (approximatePosition === undefined) return nearest
+      return Math.abs(candidate.position - approximatePosition) < Math.abs(nearest.position - approximatePosition)
+        ? candidate
+        : nearest
+    })
+    return this.gotoSourcePosition(chapter.position)
+  }
+
   gotoSourcePosition(position: number): boolean {
     if (!Number.isFinite(position)) return false
-    this.setSelection(position)
+    const length = this.view.state.doc.length
+    const target = Math.max(0, Math.min(length, Math.trunc(position)))
+    const line = this.view.state.doc.lineAt(target)
+    this.view.dispatch({
+      selection: { anchor: line.from, head: line.from },
+    })
+
+    this.scrollSourceChapterIntoView(line.from)
     return true
+  }
+
+  private scrollSourceChapterIntoView(position: number, attempt = 0): void {
+    // Jumping far into a large document can first render the target using an
+    // estimated height. After CodeMirror scrolls it into view, calibrate with
+    // the real rendered coordinates so wrapped paragraphs above cannot leave
+    // the heading one or two paragraphs away from the top.
+    const line = this.view.state.doc.lineAt(position)
+    // A position at line.from sits on the boundary between the previous line
+    // and the heading. CodeMirror may resolve that boundary to the previous
+    // paragraph's rect, which makes sidebar jumps land one or two blocks high.
+    // Scroll to the heading's first character and prefer the downward side.
+    const scrollTarget = Math.min(line.to, line.from + 1)
+    this.view.dispatch({
+      effects: EditorView.scrollIntoView(scrollTarget, { y: 'start' }),
+    })
+    window.requestAnimationFrame(() => {
+      if (this.view.state.doc.lineAt(position).from !== position) return
+      const coords = this.view.coordsAtPos(scrollTarget, 1)
+      const viewport = this.view.scrollDOM.getBoundingClientRect()
+      if (coords) {
+        const delta = coords.top - viewport.top - 56
+        if (Math.abs(delta) > 1) this.view.scrollDOM.scrollTop += delta
+      }
+      // CodeMirror virtualizes distant lines. The first measured coordinate
+      // can still be based on estimated block heights; wrapping and table
+      // layout may settle over several frames. Keep correcting until the
+      // layout has had time to converge instead of accepting that first value.
+      if (attempt < 8) {
+        window.requestAnimationFrame(() => this.scrollSourceChapterIntoView(position, attempt + 1))
+      }
+    })
   }
 
   setSelectionToRenderedLineEnd(lineNumber: number, center = false): void {

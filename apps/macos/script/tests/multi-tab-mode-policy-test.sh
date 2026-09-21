@@ -24,16 +24,42 @@ method_body() {
   ' "$1"
 }
 
+MULTI_TAB_UI_BODY=$(method_body "$WINDOW" installMultiTabUI)
+require_text "$MULTI_TAB_UI_BODY" 'tabBar.topAnchor.constraint(equalTo: rightColumn.safeAreaLayoutGuide.topAnchor)' \
+  'the tab strip must stay below the fixed MarkLeaf titlebar'
+if grep -Fq 'tabBar.topAnchor.constraint(equalTo: rightColumn.topAnchor)' <<<"$MULTI_TAB_UI_BODY"; then
+  echo 'FAIL: the tab strip must not overlap the native titlebar' >&2
+  exit 1
+fi
+WINDOW_TITLE_BODY=$(method_body "$WINDOW" applyWindowTitle)
+require_text "$WINDOW_TITLE_BODY" 'windowTitleTransitionView?.setFilename(baseTitle)' \
+  'single-tab mode must retain the existing filename title behavior'
+require_text "$WINDOW_TITLE_BODY" 'windowTitleTransitionView?.setFilename("MarkLeaf")' \
+  'multi-tab mode must render its fixed title with the shared centered title view'
+
 require "$SETTINGS" 'var multiTabEnabled = true' 'multi-tab must default to enabled'
 require "$SETTINGS" 'forKey: .multiTabEnabled' 'legacy settings must decode multi-tab with a safe default'
 require "$PREFS" 'private let multiTabCheck' 'preferences must expose the multi-tab switch'
-require "$PREFS" 'settings.multiTabEnabled = multiTabCheck.state == .on' 'preferences must persist the multi-tab switch'
+require "$PREFS" 'settings.multiTabEnabled = multiTabEnabled' 'preferences must persist the multi-tab switch'
+require "$PREFS" 'syncOpenModeControlStates()' \
+  'preferences must keep file-open controls in sync with multi-tab mode'
+require "$PREFS" 'MultiTabModePolicy.externalNewTabItemEnabled(multiTabEnabled:' \
+  'external new-tab menu item must follow the multi-tab policy'
+require "$PREFS" 'MultiTabModePolicy.workspaceControlsEnabled(' \
+  'workspace open controls must follow the multi-tab policy'
+require "$PREFS" 'MultiTabModePolicy.workspaceDisplayPrefersNewTab(' \
+  'disabled workspace controls must display the default new-tab preference'
+require "$PREFS" 'settings.externalFileOpenMode = savedExternalFileOpenMode' \
+  'external new-tab selection must be normalized before persistence'
+require "$PREFS" 'settings.workspaceOpenInNewTab = displayedWorkspaceOpensInNewTab' \
+  'workspace preference must be normalized to match the disabled control display'
 require "$PREFS" 'let editorAlignedCheckboxes: Set<NSButton> = [' 'editor checkboxes must use a shared alignment group'
 PREFS_FILE_BODY=$(method_body "$PREFS" filePage)
 PREFS_EDITOR_BODY=$(method_body "$PREFS" editorPage)
 require_text "$PREFS_EDITOR_BODY" '.header(L10n.t("文档与标签"))' 'the editor page must contain a documents-and-tabs group'
-require_text "$PREFS_EDITOR_BODY" '.field("", multiTabCheck)' 'the multi-tab switch must belong to the editor page group'
-if grep -Fq '.field("", multiTabCheck)' <<<"$PREFS_FILE_BODY"; then
+require_text "$PREFS_EDITOR_BODY" '.checkboxGroup([multiTabCheck, ignoreMaxWidthCheck, blockHandleCheck])' \
+  'the multi-tab switch must belong to the editor page group'
+if grep -Fq '.checkboxGroup([multiTabCheck' <<<"$PREFS_FILE_BODY"; then
   echo 'FAIL: the multi-tab switch must not remain on the file page' >&2
   exit 1
 fi

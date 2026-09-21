@@ -21,5 +21,19 @@ expect(MultiTabModePolicy.externalFileMode(.newWindow, multiTabEnabled: false) =
        "external new-window requests remain windows when tabs are disabled")
 expect(MultiTabModePolicy.externalFileMode(.newTab, multiTabEnabled: true) == .newTab,
        "multi-tab enabled should retain the external open preference")
+expect(MultiTabModePolicy.externalNewTabItemEnabled(multiTabEnabled: true),
+       "external new-tab should be selectable when multi-tab is enabled")
+expect(!MultiTabModePolicy.externalNewTabItemEnabled(multiTabEnabled: false),
+       "external new-tab must be disabled when multi-tab is disabled")
+expect(!MultiTabModePolicy.workspaceControlsEnabled(multiTabEnabled: false),
+       "workspace open mode should disable its whole popup when multi-tab is disabled")
+expect(MultiTabModePolicy.workspaceControlsEnabled(multiTabEnabled: true),
+       "workspace open mode should remain enabled when multi-tab is enabled")
+expect(MultiTabModePolicy.workspaceDisplayPrefersNewTab(saved: true, multiTabEnabled: false),
+       "disabled workspace open mode should display its default new-tab value")
+expect(MultiTabModePolicy.workspaceDisplayPrefersNewTab(saved: false, multiTabEnabled: false),
+       "disabled workspace open mode should keep displaying the default even if current-tab was saved")
+expect(!MultiTabModePolicy.workspaceDisplayPrefersNewTab(saved: false, multiTabEnabled: true),
+       "enabled workspace open mode should preserve the saved current-tab preference")
 
 print("PASS")

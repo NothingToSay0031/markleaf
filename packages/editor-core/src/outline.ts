@@ -10,6 +10,30 @@ export function getDocumentOutline(editor: Editor): OutlineHeading[] {
   return headings
 }
 
+function normalizeOutlineText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+/// Resolve a heading after mode switches or document edits. Positions can go
+/// stale even though the visible heading text is still authoritative; the old
+/// position remains a tie-breaker for duplicate headings.
+export function resolveOutlineHeading(editor: Editor, position: number, headingText?: string): HTMLElement | null {
+  const headings = getDocumentOutline(editor)
+  const normalizedText = headingText === undefined ? undefined : normalizeOutlineText(headingText)
+  const candidates = normalizedText === undefined
+    ? headings
+    : headings.filter(heading => normalizeOutlineText(heading.text) === normalizedText)
+  const heading = candidates.reduce<OutlineHeading | null>((nearest, candidate) => {
+    if (!nearest) return candidate
+    return Math.abs(candidate.position - position) < Math.abs(nearest.position - position)
+      ? candidate
+      : nearest
+  }, null)
+
+  const node = editor.view.nodeDOM(heading?.position ?? position)
+  return node instanceof HTMLElement && /^H[1-6]$/.test(node.tagName) ? node : null
+}
+
 export function getActiveOutlinePosition(editor: Editor, source: 'cursor' | 'scroll', topInset = 0): number | null {
   const headings = getDocumentOutline(editor)
   let active: number | null = source === 'scroll' ? headings[0]?.position ?? null : null
@@ -22,19 +46,48 @@ export function getActiveOutlinePosition(editor: Editor, source: 'cursor' | 'scr
   return active
 }
 
-export function scrollToOutlineHeading(editor: Editor, position: number, topInset = 0): boolean {
-  const heading = editor.view.nodeDOM(position)
-  if (!(heading instanceof HTMLElement) || !/^H[1-6]$/.test(heading.tagName)) return false
-  const scrollingElement = document.scrollingElement ?? document.documentElement
-  const lineHeight = Number.parseFloat(window.getComputedStyle(heading).lineHeight)
-  const top = Math.max(0, scrollingElement.scrollTop + heading.getBoundingClientRect().top - topInset
-    - (Number.isFinite(lineHeight) ? lineHeight / 2 : 12))
+export function scrollToOutlineHeading(editor: Editor, position: number, topInset = 0, headingText?: string): boolean {
+  const heading = resolveOutlineHeading(editor, position, headingText)
+  if (!heading) return false
+  const scrollingElement = document.scrollingElement as HTMLElement ?? document.documentElement
 
-  // WKWebView may ignore window.scrollTo for very tall documents, while the same
-  // scrolling element accepts direct offset writes (the path used by session restore).
-  scrollingElement.scrollTop = top
-  document.documentElement.scrollTop = top
-  document.body.scrollTop = top
+  // Outline commands must drive whichever element actually owns scrolling.
+  // The editor is normally window-scrolled, but host containers and future
+  // layout modes can introduce an intermediate scroll box.
+  let scrollContainer: HTMLElement = scrollingElement
+  for (let node: HTMLElement | null = heading.parentElement; node; node = node.parentElement) {
+    const overflowY = window.getComputedStyle(node).overflowY
+    if ((overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay')
+      && node.scrollHeight > node.clientHeight) {
+      scrollContainer = node
+      break
+    }
+  }
+
+  const apply = () => {
+    const lineHeight = Number.parseFloat(window.getComputedStyle(heading).lineHeight)
+    const containerRect = scrollContainer.getBoundingClientRect()
+    const viewportTop = scrollContainer === scrollingElement ? 0 : containerRect.top
+    const top = Math.max(0, scrollContainer.scrollTop + heading.getBoundingClientRect().top - viewportTop - topInset
+      - (Number.isFinite(lineHeight) ? lineHeight / 2 : 12))
+
+    // WKWebView may ignore window.scrollTo for very tall documents, while the same
+    // scrolling element accepts direct offset writes (the path used by session restore).
+    scrollContainer.scrollTop = top
+    if (scrollContainer === scrollingElement) {
+      document.documentElement.scrollTop = top
+      document.body.scrollTop = top
+    }
+  }
+
+  apply()
+  // Images, fonts, and ProseMirror decorations can settle after the command has
+  // returned. Re-read the heading rect after layout so the final position is
+  // anchored to the heading that was clicked, rather than a stale pre-layout row.
+  window.requestAnimationFrame(() => {
+    apply()
+    window.requestAnimationFrame(apply)
+  })
   return true
 }
 

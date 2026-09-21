@@ -30,6 +30,7 @@ final class FontSettingsWindowController: NSWindowController, NSTextFieldDelegat
             styleMask: [.titled, .closable], backing: .buffered, defer: false
         )
         window.title = L10n.t("字体设置")
+        FloatingWindowChrome.configure(window, classification: .navigation)
         window.center()
         super.init(window: window)
 

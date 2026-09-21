@@ -235,6 +235,22 @@ expect(shortImagesPage.height == 354,
 expect(shortImagesPage.width == shortRegularPage.width,
        "the Images-only height correction must not change preference window width")
 
+let tallEditorPage = PreferencesWindowLayout.windowContentSize(
+    for: NSSize(width: 500, height: 680),
+    metrics: zh,
+    page: .editor
+)
+expect(tallEditorPage.height == 704,
+       "the Chinese Editor page must expand past the old 620-point cap so its hint and bottom bar do not collide")
+
+let oversizedEditorPage = PreferencesWindowLayout.windowContentSize(
+    for: NSSize(width: 500, height: 780),
+    metrics: zh,
+    page: .editor
+)
+expect(oversizedEditorPage.height == zh.maximumWindowHeight,
+       "the Chinese Editor page must retain a stable maximum height on large displays")
+
 if failures > 0 {
     exit(1)
 }

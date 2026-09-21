@@ -39,6 +39,7 @@ final class OptionalFontsWindowController: NSWindowController, NSWindowDelegate,
         )
         window.title = L10n.t("安装可选字体")
         window.isReleasedWhenClosed = false
+        FloatingWindowChrome.configure(window, classification: .content)
         window.contentMinSize = NSSize(width: 680, height: 380)
         window.center()
         super.init(window: window)
@@ -92,7 +93,7 @@ final class OptionalFontsWindowController: NSWindowController, NSWindowDelegate,
 
         let scroll = NSScrollView()
         scroll.documentView = tableView
-        scroll.hasVerticalScroller = true
+        CompactOverlayScrollView.configure(scroll)
         scroll.borderType = .bezelBorder
         scroll.translatesAutoresizingMaskIntoConstraints = false
 

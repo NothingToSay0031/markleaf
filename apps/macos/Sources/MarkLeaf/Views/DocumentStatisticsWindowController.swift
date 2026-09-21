@@ -10,6 +10,7 @@ final class DocumentStatisticsWindowController: NSWindowController {
             backing: .buffered,
             defer: false)
         window.title = L10n.t("文档统计")
+        FloatingWindowChrome.configure(window, classification: .content)
         window.center()
         super.init(window: window)
 

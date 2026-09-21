@@ -49,7 +49,7 @@ require "$PREFS" 'workspaceOpenModePopup' \
   'preferences must expose the workspace open mode as a popup'
 require "$PREFS" '工作区文件打开方式' \
   'the workspace row label must mirror the external-file row label'
-require "$PREFS" 'settings.workspaceOpenInNewTab = WorkspaceFileOpenPreferenceModel.opensInNewTab(' \
+require "$PREFS" 'settings.workspaceOpenInNewTab = displayedWorkspaceOpensInNewTab' \
   'preference changes must be saved back to settings'
 
 echo "PASS"

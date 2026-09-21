@@ -33,6 +33,11 @@ assert 'ColorThemeRow' in model and 'func colorRows(' in model
 assert 'rows(for: "浅色", light)' in model and 'rows(for: "深色", dark)' in model
 assert 'isGroupRow' in settings and 'shouldSelectRow' in settings
 assert 'ThemeSwatchView(theme: theme)' in settings
+# Theme settings is a floating utility panel: its top-level navigation should
+# use the shared interactive Liquid Glass layer while the content stays opaque.
+assert 'GlassSurfaceView(style: .interactive)' in settings
+assert 'segmentedGlassSurface.setContent(segmentedControl)' in settings
+assert 'segmentedGlassSurface.embedsContentInGlass = true' in settings
 # 排版页必须为缺字样式提供可点击徽标，而不是只有页脚提示。
 assert 'NSButton(title: L10n.t("缺字体")' in settings
 l10n=(root/'Services/L10n.swift').read_text()

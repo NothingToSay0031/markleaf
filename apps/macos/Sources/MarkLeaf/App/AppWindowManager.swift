@@ -448,7 +448,6 @@ final class AppWindowManager {
             hasVisibleWindows: hasVisibleWindows,
             hasEditorWindow: !windowControllers.isEmpty
         )
-
         switch action {
         case .none:
             return

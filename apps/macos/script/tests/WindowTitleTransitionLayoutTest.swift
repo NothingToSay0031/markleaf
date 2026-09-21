@@ -14,7 +14,27 @@ expect(
 )
 // The filename and marker share one layer so the whole title moves together.
 expect(titleView.titleContentViewForTesting.layer != nil, "the title content must be layer-backed for reliable titlebar motion")
+expect(
+    abs(titleView.titleSlideTransformForTesting.m41 - titleView.titleSlideOffsetForTesting) < 0.5,
+    "a fresh title view must start in the hidden-marker slide state so its first modified animation matches later transitions"
+)
 titleView.setFilename("笔记.md")
+titleView.setStatusMarker("已修改", visible: false, animated: false)
+let firstHiddenOffset = titleView.titleSlideTransformForTesting.m41
+let firstReservedWidth = titleView.statusSpaceWidthForTesting
+titleView.setStatusMarker("已修改", visible: true, animated: false)
+let firstVisibleWidth = titleView.statusSpaceWidthForTesting
+titleView.setStatusMarker("已修改", visible: false, animated: false)
+let laterHiddenOffset = titleView.titleSlideTransformForTesting.m41
+print("First/later slide distance: \(firstHiddenOffset) / \(laterHiddenOffset)")
+expect(
+    abs(firstHiddenOffset - laterHiddenOffset) < 0.5,
+    "the first modification must slide the filename as far as subsequent modifications"
+)
+expect(
+    abs(firstReservedWidth - firstVisibleWidth) < 0.5,
+    "the first modification must not resize and recenter the title underneath its slide animation"
+)
 titleView.setStatusMarker("已修改", visible: true, animated: false)
 titleView.translatesAutoresizingMaskIntoConstraints = false
 

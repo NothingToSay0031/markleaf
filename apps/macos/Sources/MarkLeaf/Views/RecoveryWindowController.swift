@@ -41,6 +41,7 @@ final class RecoveryWindowController: NSWindowController, NSTableViewDataSource,
             defer: false)
         window.title = L10n.translate("恢复未保存的文档", language: language)
         window.isReleasedWhenClosed = false
+        FloatingWindowChrome.configure(window, classification: .content)
         window.center()
         super.init(window: window)
 
@@ -68,7 +69,7 @@ final class RecoveryWindowController: NSWindowController, NSTableViewDataSource,
 
         let scroll = NSScrollView()
         scroll.documentView = tableView
-        scroll.hasVerticalScroller = true
+        CompactOverlayScrollView.configure(scroll)
         scroll.translatesAutoresizingMaskIntoConstraints = false
 
         let saveOriginalButton = NSButton(title: L10n.translate("保存", language: language), target: self, action: #selector(saveToOriginal))

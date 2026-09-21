@@ -56,6 +56,7 @@ final class ExportWindowController: NSWindowController, NSWindowDelegate, NSText
     private var pageBehaviorRow: NSView?
     private var imageSettingsRow: NSView?
     private var imageQualityRow: NSView?
+    private var isImageQualityRowVisible = false
     private var headerFieldRowHeight: NSLayoutConstraint?
     private var footerFieldRowHeight: NSLayoutConstraint?
     private var imageQualityRowHeight: NSLayoutConstraint?
@@ -97,6 +98,7 @@ final class ExportWindowController: NSWindowController, NSWindowDelegate, NSText
             defer: false)
         window.title = L10n.t("导出文档")
         window.isReleasedWhenClosed = false
+        FloatingWindowChrome.configure(window, classification: .content)
         window.minSize = NSSize(width: 960, height: 680)
         super.init(window: window)
         window.delegate = self
@@ -359,8 +361,7 @@ final class ExportWindowController: NSWindowController, NSWindowDelegate, NSText
         optionsDocument.addSubview(optionsStack)
         let optionsScrollView = NSScrollView()
         optionsScrollView.drawsBackground = false
-        optionsScrollView.hasVerticalScroller = true
-        optionsScrollView.autohidesScrollers = true
+        CompactOverlayScrollView.configure(optionsScrollView)
         optionsScrollView.translatesAutoresizingMaskIntoConstraints = false
         optionsScrollView.documentView = optionsDocument
         NSLayoutConstraint.activate([
@@ -707,8 +708,8 @@ final class ExportWindowController: NSWindowController, NSWindowDelegate, NSText
 
     private func setImageQualityRowVisible(_ visible: Bool, animated: Bool = true) {
         guard let row = imageQualityRow, let height = imageQualityRowHeight else { return }
-        let currentlyVisible = height.constant > 0
-        guard visible != currentlyVisible else { return }
+        guard visible != isImageQualityRowVisible else { return }
+        isImageQualityRowVisible = visible
         imageQualityGeneration += 1
         let generation = imageQualityGeneration
         if visible, row.isHidden {

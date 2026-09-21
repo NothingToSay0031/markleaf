@@ -33,7 +33,7 @@ require 'onClose?()' "$TAB_BAR" 'middle click must invoke the normal close actio
 
 # Safari-style layout keeps the tab strip full-width and splits available space equally.
 require 'stack.distribution = .fillEqually' "$TAB_BAR" 'tabs must divide the available strip width equally'
-require 'stack.trailingAnchor.constraint(equalTo: newTabButton.leadingAnchor' "$TAB_BAR" 'tab strip must consume all space before the plus button'
+require 'glassSurface.trailingAnchor.constraint(equalTo: newTabButton.leadingAnchor' "$TAB_BAR" 'glass-backed tab strip must consume all space before the plus button'
 require 'TabAnimationPolicy.duration(for: .insertRemoveReorder' "$TAB_BAR" 'new tabs must use the existing smooth layout animation policy'
 
 echo "PASS"

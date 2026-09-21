@@ -21,6 +21,7 @@ final class ShortcutWindowController: NSWindowController, NSTableViewDataSource,
             defer: false)
         window.title = L10n.t("快捷键")
         window.isReleasedWhenClosed = false
+        FloatingWindowChrome.configure(window, classification: .content)
         window.contentMinSize = NSSize(width: 520, height: 480)
         window.center()
         super.init(window: window)
@@ -52,7 +53,7 @@ final class ShortcutWindowController: NSWindowController, NSTableViewDataSource,
 
         let scroll = NSScrollView()
         scroll.documentView = tableView
-        scroll.hasVerticalScroller = true
+        CompactOverlayScrollView.configure(scroll)
         scroll.translatesAutoresizingMaskIntoConstraints = false
 
         statusLabel.font = .systemFont(ofSize: 12)

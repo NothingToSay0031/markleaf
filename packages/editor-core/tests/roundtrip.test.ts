@@ -1011,6 +1011,23 @@ describe('paragraph menu commands', () => {
     )
   })
 
+  it('resolves outline jumps by heading text when the position is stale', () => {
+    const element = document.createElement('div')
+    document.body.append(element)
+    const editor = createEditor(element, '# First\n\n## Second')
+    editors.push(editor)
+    const heading = element.querySelector<HTMLElement>('h2')!
+    Object.defineProperty(document, 'scrollingElement', { configurable: true, value: document.documentElement })
+    document.documentElement.scrollTop = 400
+    vi.spyOn(heading, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 120, top: 120, right: 0, bottom: 0, left: 0, width: 0, height: 0, toJSON: () => ({}),
+    })
+
+    expect(executeEditorCommand(editor, 'scrollToPosition', '9999\tSecond')).toBe(true)
+    expect(document.documentElement.scrollTop).toBe(508)
+    expect(heading.classList.contains('markleaf-outline-highlight')).toBe(true)
+  })
+
   it('inserts a GFM table', () => {
     const element = document.createElement('div')
     document.body.append(element)

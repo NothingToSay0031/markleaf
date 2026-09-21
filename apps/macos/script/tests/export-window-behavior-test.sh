@@ -14,6 +14,12 @@ if lists:
     objects = [x.strip().strip('"') for x in linkfile.read_text().splitlines()
                if not x.strip().strip('"').endswith('/main.o')]
     module = root / '.build/out/Products/Debug'
+elif (root / '.build/out/Intermediates.noindex/MarkLeaf.build/Debug/MarkLeaf-p.build/Objects-normal/arm64').is_dir():
+    # Xcode 27's SwiftPM backend emits per-source objects and the swiftmodule
+    # beside them under Intermediates.noindex instead of using LinkFileList.
+    object_dir = root / '.build/out/Intermediates.noindex/MarkLeaf.build/Debug/MarkLeaf-p.build/Objects-normal/arm64'
+    objects = [str(p) for p in object_dir.glob('*.o') if p.name != 'main.o']
+    module = object_dir
 else:
     module = next((root / '.build').glob('*/debug/Modules'))
     objects = [str(p) for p in (module.parent / 'MarkLeaf.build').glob('*.swift.o') if p.name != 'main.swift.o']

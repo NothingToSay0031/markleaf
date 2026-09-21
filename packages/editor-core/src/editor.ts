@@ -1,6 +1,6 @@
 import { FOOTNOTE_DEFINITION_SENTINEL, protectFootnoteDefinitionsForVisualMarkdown, frontMatterTokenizer, highlightTokenizer, alertTokenizer, footnoteTokenizer, normalizeDisplayMathAfterList } from './document/markdown-syntax'
 import { resolveImageResource, getImageResourcePath as getMarkLeafImagePath } from './image-resources'
-import { scrollToOutlineHeading } from './outline'
+import { resolveOutlineHeading, scrollToOutlineHeading } from './outline'
 import { resolveEditorActions, getEditorSemanticContext, type EditorActionContext } from './command-state'
 import type { EditorCommandState, EditorStatus } from './editor-state'
 export type { EditorCommandState, EditorStatus } from './editor-state'
@@ -5097,13 +5097,17 @@ export function executeEditorCommand(
       return true
     },
     scrollToPosition: () => {
-      const position = Number.parseInt(text ?? '', 10)
-      if (!Number.isInteger(position) || position < 0 || position > editor.state.doc.content.size) {
+      const commandText = text ?? ''
+      const separator = commandText.indexOf('\t')
+      const position = Number.parseInt(separator >= 0 ? commandText.slice(0, separator) : commandText, 10)
+      if (!Number.isInteger(position) || position < 0) {
         return false
       }
 
-      const success = scrollToOutlineHeading(editor, position)
-      const heading = editor.view.nodeDOM(position)
+      const headingText = separator >= 0 ? commandText.slice(separator + 1) : undefined
+      const heading = resolveOutlineHeading(editor, position, headingText)
+      if (!heading) return false
+      const success = scrollToOutlineHeading(editor, position, 0, headingText)
       if (success && heading instanceof HTMLElement) highlightOutlineHeading(heading)
       return success
     },

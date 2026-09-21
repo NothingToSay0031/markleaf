@@ -36,7 +36,7 @@ enum PreferencesWindowLayout {
         minimumWindowWidth: 500,
         maximumWindowWidth: 500,
         minimumWindowHeight: 420,
-        maximumWindowHeight: 620,
+        maximumWindowHeight: 720,
         maximumContentColumnWidth: 452,
         formContentColumnWidth: 400,
         contentHorizontalOffset: 0,
@@ -51,7 +51,7 @@ enum PreferencesWindowLayout {
         minimumWindowWidth: 520,
         maximumWindowWidth: 520,
         minimumWindowHeight: 420,
-        maximumWindowHeight: 620,
+        maximumWindowHeight: 720,
         maximumContentColumnWidth: 472,
         formContentColumnWidth: 420,
         contentHorizontalOffset: 0,
@@ -66,7 +66,7 @@ enum PreferencesWindowLayout {
         minimumWindowWidth: 560,
         maximumWindowWidth: 560,
         minimumWindowHeight: 420,
-        maximumWindowHeight: 620,
+        maximumWindowHeight: 720,
         maximumContentColumnWidth: 512,
         formContentColumnWidth: 500,
         contentHorizontalOffset: 0,
@@ -81,7 +81,7 @@ enum PreferencesWindowLayout {
         minimumWindowWidth: 620,
         maximumWindowWidth: 620,
         minimumWindowHeight: 420,
-        maximumWindowHeight: 620,
+        maximumWindowHeight: 720,
         maximumContentColumnWidth: 572,
         formContentColumnWidth: 560,
         contentHorizontalOffset: 0,
@@ -181,6 +181,9 @@ enum PreferencesWindowLayout {
         metrics: Metrics,
         page: Page = .file
     ) -> NSSize {
+        // Keep the approved language-specific window width. The preference
+        // toolbar now lays out its tabs natively, so it does not need a
+        // separate global width floor.
         let width = metrics.minimumWindowWidth
         let minimumHeight = page == .images ? 0 : metrics.minimumWindowHeight
         let height = min(

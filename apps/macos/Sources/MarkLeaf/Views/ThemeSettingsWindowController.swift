@@ -106,18 +106,21 @@ final class ThemeSettingsWindowController: NSWindowController, NSWindowDelegate,
 
         let root = NSView()
         let content = NSView()
-        for view in [segmentedControl, content] {
+        let segmentedGlassSurface = GlassSurfaceView(style: .interactive)
+        segmentedGlassSurface.embedsContentInGlass = true
+        segmentedGlassSurface.setContent(segmentedControl)
+        for view in [segmentedGlassSurface, content] {
             view.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(view)
         }
         NSLayoutConstraint.activate([
-            segmentedControl.topAnchor.constraint(equalTo: root.topAnchor, constant: 14),
-            segmentedControl.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 18),
-            segmentedControl.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -18),
-            content.topAnchor.constraint(equalTo: segmentedControl.bottomAnchor, constant: 12),
+            segmentedGlassSurface.topAnchor.constraint(equalTo: root.topAnchor, constant: 14),
+            segmentedGlassSurface.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 18),
+            segmentedGlassSurface.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -18),
+            content.topAnchor.constraint(equalTo: segmentedGlassSurface.bottomAnchor, constant: 12),
             content.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 18),
             content.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -18),
-            content.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -54),
+            content.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -20),
         ])
 
         buildColorsPage()
@@ -133,14 +136,6 @@ final class ThemeSettingsWindowController: NSWindowController, NSWindowDelegate,
             ])
         }
 
-        let closeButton = NSButton(title: L10n.t("关闭"), target: self, action: #selector(closeWindow))
-        closeButton.keyEquivalent = "\u{1b}"
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(closeButton)
-        NSLayoutConstraint.activate([
-            closeButton.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -18),
-            closeButton.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14),
-        ])
         window.contentView = root
     }
 
@@ -252,7 +247,7 @@ final class ThemeSettingsWindowController: NSWindowController, NSWindowDelegate,
         table.floatsGroupRows = false
         let scroll = NSScrollView()
         scroll.documentView = table
-        scroll.hasVerticalScroller = true
+        CompactOverlayScrollView.configure(scroll)
         scroll.borderType = .bezelBorder
         return scroll
     }
@@ -481,7 +476,6 @@ final class ThemeSettingsWindowController: NSWindowController, NSWindowDelegate,
     @objc private func showOptionalFonts() { onOptionalFonts() }
     @objc private func addTheme() { onAddTheme() }
     @objc private func openThemeFolder() { onOpenThemeFolder() }
-    @objc private func closeWindow() { window?.close() }
     func windowWillClose(_ notification: Notification) { onClose?() }
 }
 

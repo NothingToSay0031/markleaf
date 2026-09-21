@@ -61,6 +61,11 @@ final class WindowTitleTransitionView: NSView {
             ),
             statusLabel.firstBaselineAnchor.constraint(equalTo: filenameLabel.firstBaselineAnchor),
         ])
+        // Reserve the complete marker before the first layout, just as after
+        // a save. Otherwise the first edit grows/recenters the layout while
+        // animating only the empty spacer's 3pt offset instead of the full slide.
+        statusSpaceWidthConstraint.constant = statusMarkerWidth
+        setTitleSlide(hidden: true, animated: false)
     }
 
     required init?(coder: NSCoder) {

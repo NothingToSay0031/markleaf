@@ -10,10 +10,37 @@
 #   ./script/build_and_run.sh -- --open file.md    # 将额外参数透传给应用
 set -euo pipefail
 
+# macOS 26/27 AppKit only exposes the latest Liquid Glass toolbar treatment
+# when the app is linked with the current Xcode SDK. Keep an explicit caller
+# override, prefer the installed stable Xcode, and fall back to the beta when
+# the stable app is not present.
+if [[ -z "${DEVELOPER_DIR:-}" ]]; then
+  for candidate in \
+    "/Applications/Xcode.app/Contents/Developer" \
+    "/Applications/Xcode-beta.app/Contents/Developer"; do
+    if [[ -d "$candidate" ]]; then
+      export DEVELOPER_DIR="$candidate"
+      break
+    fi
+  done
+fi
+
 MODE="${1:-run}"
 APP_NAME="MarkLeaf"
 BUNDLE_ID="com.markleaf.app"
 MIN_SYSTEM_VERSION="13.0"
+
+# SwiftPM uses the package deployment target for both sides of the Mach-O
+# platform tuple unless the linker receives an explicit SDK version. Keep the
+# minimum OS at macOS 13, but record the selected Xcode SDK so newer AppKit
+# appearances (including Liquid Glass) are enabled at runtime.
+SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
+SDK_LINKER_FLAGS=(
+  -Xlinker -platform_version
+  -Xlinker macos
+  -Xlinker "$MIN_SYSTEM_VERSION"
+  -Xlinker "$SDK_VERSION"
+)
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_DIR="$(cd "$ROOT_DIR/../.." && pwd)"
@@ -46,9 +73,9 @@ pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 
 # ---- 2. 准备资源 + 构建 ----
 "$ROOT_DIR/script/prepare_resources.sh"
-swift build ${SWIFT_BUILD_FLAGS[@]+"${SWIFT_BUILD_FLAGS[@]}"} --package-path "$ROOT_DIR"
+swift build ${SWIFT_BUILD_FLAGS[@]+"${SWIFT_BUILD_FLAGS[@]}"} "${SDK_LINKER_FLAGS[@]}" --package-path "$ROOT_DIR"
 
-BUILD_BINARY="$(swift build ${SWIFT_BUILD_FLAGS[@]+"${SWIFT_BUILD_FLAGS[@]}"} --package-path "$ROOT_DIR" --show-bin-path)/$APP_NAME"
+BUILD_BINARY="$(swift build ${SWIFT_BUILD_FLAGS[@]+"${SWIFT_BUILD_FLAGS[@]}"} "${SDK_LINKER_FLAGS[@]}" --package-path "$ROOT_DIR" --show-bin-path)/$APP_NAME"
 
 # ---- 3. 打包 .app（SwiftPM GUI 应用必须走 bundle，直接跑裸二进制会丢 Dock 图标/激活） ----
 rm -rf "$APP_BUNDLE"

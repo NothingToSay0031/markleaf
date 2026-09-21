@@ -41,6 +41,18 @@ final class FindPanelController: NSWindowController, NSTextFieldDelegate, NSSear
         window.level = .floating
         window.hidesOnDeactivate = false
         window.collectionBehavior = [.fullScreenAuxiliary]
+        // The panel has its own compact Close control. A full-size transparent
+        // title bar lets Liquid Glass cover the complete floating card while the
+        // custom close button remains the visible affordance.
+        window.styleMask.insert(.fullSizeContentView)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.isMovableByWindowBackground = true
         super.init(window: window)
         // 标题栏关闭按钮与 ⌘W 走窗口自身的关闭路径，不会触发 closeClicked；
         // 统一监听 willClose 通知前端清理查找高亮，避免关闭面板后蓝色高亮残留。
@@ -141,7 +153,8 @@ final class FindPanelController: NSWindowController, NSTextFieldDelegate, NSSear
         contentView.addSubview(findRow)
         contentView.addSubview(replaceRow)
         contentView.addSubview(optionsRow)
-        window.contentView = contentView
+
+        GlassWindowAttachment.attach(contentView, to: window, style: .interactive)
 
         let replaceTop = replaceRow.topAnchor.constraint(
             equalTo: findRow.bottomAnchor,

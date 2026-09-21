@@ -27,12 +27,15 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     private var isAnimatingTabBar = false
     private weak var rightColumnView: NSView?
     private var editorHostTopConstraint: NSLayoutConstraint?
+    private var titleBarGlassSurface: GlassSurfaceView?
     private var splitView: NSSplitView?
     private var outerSplitView: NSSplitView?
     private var statusBar: NSStackView?
     private var statusSpacer: NSView?
     private var statusDivider: NSBox?
+    private var statusBarSurface: GlassSurfaceView?
     private var statusBarHeightConstraint: NSLayoutConstraint?
+    private var statusBarAnimationTimer: Timer?
     private var isAnimatingSidebar = false
     private var isAnimatingOutline = false
     private var workspaceDividerPosition: CGFloat = 240
@@ -45,6 +48,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     private var outlineAnimationTimer: Timer?
     private var lastAppliedSidebarVisible: Bool?
     private var lastAppliedOutlineDetached: Bool?
+    private var lastAppliedStatusBarVisible: Bool?
     private var statusClearTimer: Timer?
     private var windowTitleTransitionView: WindowTitleTransitionView?
     private var isTitleStatusMarkerVisible: Bool?
@@ -99,11 +103,32 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         tabBar.translatesAutoresizingMaskIntoConstraints = false
         rightColumn.addSubview(tabBar)
         editorHostTopConstraint?.isActive = false
+        let tabBarTop = tabBar.topAnchor.constraint(equalTo: rightColumn.safeAreaLayoutGuide.topAnchor)
+        let tabBarLeading = tabBar.leadingAnchor.constraint(equalTo: rightColumn.leadingAnchor)
+        let tabBarTrailing = tabBar.trailingAnchor.constraint(equalTo: rightColumn.trailingAnchor)
+        // Keep a definite top even while the tab strip animates to zero.
+        // Lower-priority equalities let Auto Layout choose the larger of the
+        // title-bar safe area and the tab strip without collapsing the host.
+        let editorSafeTopEquality = editorHost.topAnchor.constraint(
+            equalTo: rightColumn.safeAreaLayoutGuide.topAnchor
+        )
+        editorSafeTopEquality.priority = .required - 3
+        let editorTabTopEquality = editorHost.topAnchor.constraint(
+            equalTo: tabBar.bottomAnchor
+        )
+        editorTabTopEquality.priority = .required - 2
         NSLayoutConstraint.activate([
-            tabBar.topAnchor.constraint(equalTo: rightColumn.topAnchor),
-            tabBar.leadingAnchor.constraint(equalTo: rightColumn.leadingAnchor),
-            tabBar.trailingAnchor.constraint(equalTo: rightColumn.trailingAnchor),
-            editorHost.topAnchor.constraint(equalTo: tabBar.bottomAnchor),
+            tabBarTop,
+            tabBarLeading,
+            tabBarTrailing,
+            editorSafeTopEquality,
+            editorTabTopEquality,
+            editorHost.topAnchor.constraint(
+                greaterThanOrEqualTo: rightColumn.safeAreaLayoutGuide.topAnchor
+            ),
+            editorHost.topAnchor.constraint(
+                greaterThanOrEqualTo: tabBar.bottomAnchor
+            ),
         ])
 
         // 把窗口首个（初始）标签的编辑器挂到宿主并展示。
@@ -133,8 +158,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         let multiTabEnabled = SettingsService.shared.settings.multiTabEnabled
         guard !multiTabEnabled else {
             window?.title = "MarkLeaf"
-            window?.titleVisibility = .visible
-            windowTitleTransitionView?.isHidden = true
+            window?.titleVisibility = .hidden
+            windowTitleTransitionView?.isHidden = false
+            windowTitleTransitionView?.setFilename("MarkLeaf")
+            transitionTitleStatusMarker(to: .init(text: "", isVisible: false))
             return
         }
 
@@ -980,6 +1007,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             defer: false)
         window.title = "MarkLeaf"
         window.minSize = NSSize(width: 860, height: 520)
+        // Liquid Glass needs a full-sized surface behind the title bar. Controls
+        // remain in the safe area; only the backing material crosses the seam.
+        window.styleMask.insert(.fullSizeContentView)
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
         // WindowServer 的第一帧早于 WKWebView ready；必须先让原生窗口本身使用主题底色。
         let themeBackground = session.themeBackgroundColor ?? .windowBackgroundColor
         let themeDark = session.currentThemeIsDark
@@ -1011,6 +1043,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         statusClearTimer?.invalidate()
         sidebarAnimationTimer?.invalidate()
         outlineAnimationTimer?.invalidate()
+        statusBarAnimationTimer?.invalidate()
         if let keyEventMonitor {
             NSEvent.removeMonitor(keyEventMonitor)
         }
@@ -1071,39 +1104,27 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         outerSplitView.dividerStyle = .thin
         outerSplitView.delegate = self
 
-        // 侧边栏毛玻璃容器：贯穿整个左栏（含底部），macOS 27 风格
-        let sidebarContainer = NSVisualEffectView()
-        sidebarContainer.material = .sidebar
-        sidebarContainer.blendingMode = .behindWindow
-        sidebarContainer.state = .active
+        // 主窗口原生表面统一经过玻璃适配器；旧系统与减少透明度场景自动回退。
+        let sidebarContainer = GlassSurfaceView(style: .sidebar)
+        sidebarContainer.setContent(sidebarView)
+        sidebarContainer.setContentRespectsTopSafeArea(true)
         sidebarView.translatesAutoresizingMaskIntoConstraints = false
         sidebarContainer.translatesAutoresizingMaskIntoConstraints = false
-        sidebarContainer.addSubview(sidebarView)
         self.sidebarContainerView = sidebarContainer
-        NSLayoutConstraint.activate([
-            sidebarView.leadingAnchor.constraint(equalTo: sidebarContainer.leadingAnchor),
-            sidebarView.trailingAnchor.constraint(equalTo: sidebarContainer.trailingAnchor),
-            sidebarView.topAnchor.constraint(equalTo: sidebarContainer.topAnchor),
-            sidebarView.bottomAnchor.constraint(equalTo: sidebarContainer.bottomAnchor),
-        ])
 
-        let detachedOutlineContainer = NSVisualEffectView()
-        detachedOutlineContainer.material = .sidebar
-        detachedOutlineContainer.blendingMode = .behindWindow
-        detachedOutlineContainer.state = .active
+        let detachedOutlineContainer = GlassSurfaceView(style: .sidebar)
+        detachedOutlineContainer.setContent(detachedOutlineView)
+        detachedOutlineContainer.setContentRespectsTopSafeArea(true)
         detachedOutlineView.translatesAutoresizingMaskIntoConstraints = false
-        detachedOutlineContainer.addSubview(detachedOutlineView)
-        NSLayoutConstraint.activate([
-            detachedOutlineView.leadingAnchor.constraint(equalTo: detachedOutlineContainer.leadingAnchor),
-            detachedOutlineView.trailingAnchor.constraint(equalTo: detachedOutlineContainer.trailingAnchor),
-            detachedOutlineView.topAnchor.constraint(equalTo: detachedOutlineContainer.topAnchor),
-            detachedOutlineView.bottomAnchor.constraint(equalTo: detachedOutlineContainer.bottomAnchor),
-        ])
         self.detachedOutlineContainerView = detachedOutlineContainer
 
         // 右栏：编辑器 + 状态栏
         let rightColumn = NSView()
         self.rightColumnView = rightColumn
+        let titleBarGlassSurface = GlassSurfaceView(style: .regular)
+        self.titleBarGlassSurface = titleBarGlassSurface
+        titleBarGlassSurface.translatesAutoresizingMaskIntoConstraints = false
+        rightColumn.addSubview(titleBarGlassSurface)
         let editorHost = EditorHostView()
         editorHost.emptyDropTarget.onDropURLs = { [weak self] urls in
             self?.handleEditorHostDrop(urls)
@@ -1208,8 +1229,19 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         rootView.addSubview(outerSplitView)
         rightColumn.addSubview(editorHost)
         rightColumn.addSubview(divider)
-        rightColumn.addSubview(statusBar)
-        let editorHostTop = editorHost.topAnchor.constraint(equalTo: rightColumn.topAnchor)
+        let statusBarSurface = GlassSurfaceView(style: .regular)
+        statusBarSurface.setContent(statusBar)
+        self.statusBarSurface = statusBarSurface
+        rightColumn.addSubview(statusBarSurface)
+        // The opaque editor starts below the unsafe strip. A tab strip may place
+        // its glass backing there, while visible cells are inset by TabBarController.
+        let editorHostTop = editorHost.topAnchor.constraint(
+            equalTo: rightColumn.safeAreaLayoutGuide.topAnchor
+        )
+        editorHostTop.priority = .required - 1
+        let editorHostSafeTop = editorHost.topAnchor.constraint(
+            greaterThanOrEqualTo: rightColumn.safeAreaLayoutGuide.topAnchor
+        )
         self.editorHostTopConstraint = editorHostTop
         NSLayoutConstraint.activate([
             outerSplitView.topAnchor.constraint(equalTo: rootView.topAnchor),
@@ -1217,18 +1249,24 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             outerSplitView.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
             outerSplitView.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
 
+            titleBarGlassSurface.topAnchor.constraint(equalTo: rightColumn.topAnchor),
+            titleBarGlassSurface.leadingAnchor.constraint(equalTo: rightColumn.leadingAnchor),
+            titleBarGlassSurface.trailingAnchor.constraint(equalTo: rightColumn.trailingAnchor),
+            titleBarGlassSurface.bottomAnchor.constraint(equalTo: rightColumn.safeAreaLayoutGuide.topAnchor),
+
             editorHostTop,
+            editorHostSafeTop,
             editorHost.leadingAnchor.constraint(equalTo: rightColumn.leadingAnchor),
             editorHost.trailingAnchor.constraint(equalTo: rightColumn.trailingAnchor),
             divider.topAnchor.constraint(equalTo: editorHost.bottomAnchor),
             divider.leadingAnchor.constraint(equalTo: rightColumn.leadingAnchor),
             divider.trailingAnchor.constraint(equalTo: rightColumn.trailingAnchor),
-            statusBar.topAnchor.constraint(equalTo: divider.bottomAnchor),
-            statusBar.leadingAnchor.constraint(equalTo: rightColumn.leadingAnchor),
-            statusBar.trailingAnchor.constraint(equalTo: rightColumn.trailingAnchor),
-            statusBar.bottomAnchor.constraint(equalTo: rightColumn.bottomAnchor),
+            statusBarSurface.topAnchor.constraint(equalTo: divider.bottomAnchor),
+            statusBarSurface.leadingAnchor.constraint(equalTo: rightColumn.leadingAnchor),
+            statusBarSurface.trailingAnchor.constraint(equalTo: rightColumn.trailingAnchor),
+            statusBarSurface.bottomAnchor.constraint(equalTo: rightColumn.bottomAnchor),
         ])
-        let statusBarHeight = statusBar.heightAnchor.constraint(equalToConstant: 26)
+        let statusBarHeight = statusBarSurface.heightAnchor.constraint(equalToConstant: 26)
         statusBarHeightConstraint = statusBarHeight
         statusBarHeight.isActive = true
 
@@ -1251,6 +1289,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         let contentHeight = min(760, visibleFrame.height - 80)
         window.setContentSize(NSSize(width: contentWidth, height: contentHeight))
         workspaceDividerPosition = sidebarWidth
+
     }
 
     /// 界面语言切换：刷新状态栏与侧边栏文案。
@@ -1659,27 +1698,87 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         sidebarView.setWorkspaceMode(listMode: sidebarSession.workspaceListMode)
         applyDetachedOutlineState()
 
-        // 状态栏：高度平滑过渡
         let showStatusBar = session.statusBarVisible
+        let statusBarChanged = lastAppliedStatusBarVisible != showStatusBar
+        lastAppliedStatusBarVisible = showStatusBar
+
         if showStatusBar {
-            statusBar?.isHidden = false
-            statusDivider?.isHidden = false
             applyStatusBarContents()
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.2
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                statusBarHeightConstraint?.animator().constant = 26
-            }
+        }
+
+        if !statusBarChanged {
+            statusBar?.isHidden = !showStatusBar
+            statusBarSurface?.isHidden = !showStatusBar
+            statusDivider?.isHidden = !showStatusBar
+            statusBar?.alphaValue = showStatusBar ? 1 : 0
+            statusBarSurface?.alphaValue = showStatusBar ? 1 : 0
+            statusDivider?.alphaValue = showStatusBar ? 1 : 0
+        } else if showStatusBar {
+            applyStatusBarContents()
+            animateStatusBar(visible: true)
         } else {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.2
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                statusBarHeightConstraint?.animator().constant = 0
-            } completionHandler: { [weak self] in
-                self?.statusBar?.isHidden = true
-                self?.statusDivider?.isHidden = true
+            animateStatusBar(visible: false)
+        }
+    }
+
+    /// Explicit interpolation keeps height and opacity in lockstep even when a
+    /// settings broadcast and a session callback arrive on the same run-loop turn.
+    private func animateStatusBar(visible: Bool) {
+        guard let statusBarSurface,
+              let statusBarHeightConstraint,
+              let statusBar,
+              let statusDivider else { return }
+
+        statusBarAnimationTimer?.invalidate()
+        statusBar.isHidden = false
+        statusBarSurface.isHidden = false
+        statusDivider.isHidden = false
+
+        let startHeight = statusBarHeightConstraint.constant
+        let targetHeight: CGFloat = visible ? 26 : 0
+        if abs(startHeight - targetHeight) < 0.5 {
+            statusBarHeightConstraint.constant = targetHeight
+            statusBar.alphaValue = visible ? 1 : 0
+            statusBarSurface.alphaValue = visible ? 1 : 0
+            statusDivider.alphaValue = visible ? 1 : 0
+            if !visible {
+                statusBar.isHidden = true
+                statusBarSurface.isHidden = true
+                statusDivider.isHidden = true
+            }
+            return
+        }
+
+        let startAlpha = statusBarSurface.alphaValue
+        let targetAlpha: CGFloat = visible ? 1 : 0
+        let duration: TimeInterval = 0.24
+        let startTime = CACurrentMediaTime()
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
+            guard let self else {
+                timer.invalidate()
+                return
+            }
+            let progress = min(1, (CACurrentMediaTime() - startTime) / duration)
+            let eased = progress < 0.5
+                ? 2 * progress * progress
+                : 1 - pow(-2 * progress + 2, 2) / 2
+            statusBarHeightConstraint.constant = startHeight + (targetHeight - startHeight) * eased
+            let alpha = startAlpha + (targetAlpha - startAlpha) * eased
+            statusBar.alphaValue = alpha
+            statusBarSurface.alphaValue = alpha
+            statusDivider.alphaValue = alpha
+
+            guard progress >= 1 else { return }
+            timer.invalidate()
+            self.statusBarAnimationTimer = nil
+            if !visible {
+                statusBar.isHidden = true
+                statusBarSurface.isHidden = true
+                statusDivider.isHidden = true
             }
         }
+        statusBarAnimationTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func applyDetachedOutlineState() {

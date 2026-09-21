@@ -1398,6 +1398,11 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
     /// 跟随系统外观：重新解析默认主题并换肤（开关切换或系统外观变化时调用）。
     func applyFollowSystemTheme() {
         guard isFollowSystemTheme else { return }
+        // A manual theme installs NSApp.appearance. Clear it before sampling,
+        // otherwise "sync with system" reads the previous manual appearance.
+        // This also handles macOS Auto mode, whose resolved value is not stored
+        // as a static AppleInterfaceStyle value.
+        if NSApp.appearance != nil { NSApp.appearance = nil }
         let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         let settings = SettingsService.shared.settings
         guard let manager = StyleManager(directories: styleDirectories),
@@ -1405,7 +1410,7 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
                 forDark: dark,
                 preferredLight: settings.defaultLightThemeID,
                 preferredDark: settings.defaultDarkThemeID
-              ), id != currentThemeId else { return }
+              ) else { return }
         currentThemeId = id
         guard let theme = colorThemes.first(where: { $0.id == id }) else { return }
         applySystemAppearance(for: theme)
@@ -1453,6 +1458,10 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
                 window.backgroundColor = self.themeBackgroundColor ?? .windowBackgroundColor
                 window.isOpaque = true
             }
+            // AppKit propagates appearance changes on the next layout pass.
+            // Refreshing synchronously samples the previous effective
+            // appearance and leaves Liquid Glass panes stuck on the old mode.
+            DispatchQueue.main.async { GlassSurfaceRegistry.shared.refreshAll(forceDark: dark) }
             self.applyScrollbarAppearance(dark: dark)
         }
     }
@@ -2029,8 +2038,20 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
         return destination
     }
 
-    func scrollToPosition(_ position: Int) {
-        execute("scrollToPosition", text: "\(position)")
+    func scrollToPosition(_ position: Int, headingText: String? = nil) {
+        if isSourceMode, let headingText {
+            // Positions can become stale when the source editor has been
+            // rebuilt or when line wrapping/normalization changed the text.
+            // Carry the visible heading as the authoritative source anchor;
+            // the offset remains a tie-breaker for duplicate headings.
+            execute("scrollToSourceHeading", text: "\(position)\t\(headingText)")
+        } else {
+            var commandText = "\(position)"
+            if let headingText {
+                commandText += "\t\(headingText)"
+            }
+            execute("scrollToPosition", text: commandText)
+        }
     }
 
     // MARK: - 视图状态（对应 Windows 视图菜单）
@@ -2076,7 +2097,6 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
     func toggleStatusBar() {
         statusBarVisible.toggle()
         SettingsService.shared.update { $0.statusBarVisible = statusBarVisible }
-        onViewStateChanged?()
     }
 
     func scanWorkspaceDocuments() {

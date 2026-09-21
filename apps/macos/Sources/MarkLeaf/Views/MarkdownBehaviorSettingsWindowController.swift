@@ -23,6 +23,7 @@ final class MarkdownBehaviorSettingsWindowController: NSWindowController {
             styleMask: [.titled, .closable], backing: .buffered, defer: false
         )
         window.title = L10n.t("Markdown 行为")
+        FloatingWindowChrome.configure(window, classification: .navigation)
         window.center()
         super.init(window: window)
         buildContent()

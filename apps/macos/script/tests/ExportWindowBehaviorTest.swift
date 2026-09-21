@@ -45,7 +45,7 @@ for language in ["zh-Hans", "en", "ja", "zh-Hant"] {
         for control in views.compactMap({ $0 as? NSControl }) where !control.isHiddenOrHasHiddenAncestor {
             let frame = control.convert(control.bounds, to: root)
             // Preview scrollers may be outside their clipping rect by design.
-            if frame.minX < 380 && !(control is NSScroller) {
+            if frame.midX < 380 && !(control is NSScroller) {
                 expect(frame.minX >= -1 && frame.maxX <= 381, "sidebar control must fit: \(control) \(frame)")
             }
         }

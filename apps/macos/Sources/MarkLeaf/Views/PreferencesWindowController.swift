@@ -26,8 +26,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private let tabViewController = NSTabViewController()
     private var preferencesKeyMonitor: Any?
     private var textFieldEditingOriginals: [NSTextField: String] = [:]
-    private weak var applyButton: NSButton?
     private var numericFieldMonitors: [BoundedTextFieldMonitor] = []
+    private var isInitializingControls = false
 
     var selectedPageIndex: Int {
         get { tabViewController.selectedTabViewItemIndex }
@@ -121,6 +121,18 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             defer: false)
         window.title = L10n.t("偏好设置")
         window.isReleasedWhenClosed = false
+        // Finder Settings layering: AppKit's preference toolbar owns the
+        // centered icon/title tabs and their native Liquid Glass selection
+        // capsule on macOS 26/27. Keep the form body a separate opaque
+        // surface below the toolbar.
+        window.toolbarStyle = .preference
+        window.titleVisibility = .visible
+        window.titlebarSeparatorStyle = .line
+        // Finder Settings keeps its window backing opaque. Only the selected
+        // toolbar tab is Liquid Glass; a clear backing would let editor
+        // windows bleed through the preference titlebar.
+        window.isOpaque = true
+        window.backgroundColor = .windowBackgroundColor
         window.center()
         super.init(window: window)
 
@@ -128,10 +140,12 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         themeIDs = themes.map(\.id)
 
         // ---- 控件初值 ----
+        isInitializingControls = true
         startupPopup.addItems(withTitles: [L10n.t("新建空白文档"), L10n.t("恢复最后工作区"), L10n.t("恢复完整会话")])
         startupPopup.selectItem(at: settings.startupAction == .newDocument ? 0
                                 : settings.startupAction == .openLastWorkspace ? 1 : 2)
         externalFileOpenModePopup.addItems(withTitles: ExternalFileOpenPreferenceModel.titles(language: settings.displayLanguage))
+        externalFileOpenModePopup.autoenablesItems = false
         externalFileOpenModePopup.selectItem(at: ExternalFileOpenPreferenceModel.selectedIndex(for: settings.externalFileOpenMode))
         workspaceOpenModePopup.addItems(withTitles: WorkspaceFileOpenPreferenceModel.titles(language: settings.displayLanguage))
         workspaceOpenModePopup.selectItem(at: WorkspaceFileOpenPreferenceModel.selectedIndex(opensInNewTab: settings.workspaceOpenInNewTab))
@@ -223,27 +237,26 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         }
         // 与导出「自定义边距」一致：输入即过滤非法字符、超上限整串回退；
         // 不做任何回显归一化——用户输入的 “1.60” 原样保留（不用会改写内容的 NumberFormatter）。
-        // 允许清空与低于下限的中间值：此时「应用更改」禁用，失焦还原并弹窗提示。
-        let refreshApply: () -> Void = { [weak self] in self?.refreshApplyButton() }
+        // 允许清空与低于下限的中间值：非法值不会立即提交，失焦还原并弹窗提示。
         numericFieldMonitors = [
             BoundedTextFieldMonitor(
                 field: snapshotIntervalField, fractionDigits: 0,
-                upperBound: Double(AppSettings.snapshotIntervalRange.upperBound), onChange: refreshApply),
+                upperBound: Double(AppSettings.snapshotIntervalRange.upperBound)),
             BoundedTextFieldMonitor(
                 field: lineHeightField, fractionDigits: 2,
-                upperBound: AppSettings.visualLineHeightRange.upperBound, onChange: refreshApply),
+                upperBound: AppSettings.visualLineHeightRange.upperBound),
             BoundedTextFieldMonitor(
                 field: fontSizeField, fractionDigits: 0,
-                upperBound: Double(AppSettings.visualFontSizeRange.upperBound), onChange: refreshApply),
+                upperBound: Double(AppSettings.visualFontSizeRange.upperBound)),
             BoundedTextFieldMonitor(
                 field: maxWidthField, fractionDigits: 0,
-                upperBound: Double(AppSettings.visualMaxContentWidthRange.upperBound), onChange: refreshApply),
+                upperBound: Double(AppSettings.visualMaxContentWidthRange.upperBound)),
             BoundedTextFieldMonitor(
                 field: sourceFontSizeField, fractionDigits: 0,
-                upperBound: Double(AppSettings.sourceFontSizeRange.upperBound), onChange: refreshApply),
+                upperBound: Double(AppSettings.sourceFontSizeRange.upperBound)),
             BoundedTextFieldMonitor(
                 field: sourceIndentField, fractionDigits: 0,
-                upperBound: Double(AppSettings.sourceIndentWidthRange.upperBound), onChange: refreshApply),
+                upperBound: Double(AppSettings.sourceIndentWidthRange.upperBound)),
         ]
         imageDirectoryField.bezelStyle = .roundedBezel
         imageDirectoryField.widthAnchor.constraint(equalToConstant: 260).isActive = true
@@ -301,6 +314,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             field.delegate = self
         }
         window.delegate = self
+        isInitializingControls = false
+        controlChanged()
     }
 
     deinit {
@@ -358,7 +373,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         }
     }
 
-    /// 底部操作栏：恢复默认设置 / 取消 / 应用更改。Esc 等于取消。
+    /// 底部操作栏：恢复默认设置。其余设置项在合法编辑结束时立即生效。
     private func buildBottomBar(in window: NSWindow) {
         let root = NSView()
         let tabView = tabViewController.view
@@ -367,12 +382,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
 
         let resetButton = NSButton(title: L10n.t("恢复默认设置"), target: self, action: #selector(resetAll))
         resetButton.bezelStyle = .rounded
-        let cancelButton = NSButton(title: L10n.t("取消"), target: self, action: #selector(cancelAction))
-        let applyButton = NSButton(title: L10n.t("应用更改"), target: self, action: #selector(okAction))
-        applyButton.keyEquivalent = "\r"
-        self.applyButton = applyButton
-        refreshApplyButton()
-        let bottom = NSStackView(views: [resetButton, NSView(), cancelButton, applyButton])
+        let bottom = NSStackView(views: [resetButton, NSView()])
         bottom.orientation = .horizontal
         bottom.spacing = 10
         bottom.edgeInsets = NSEdgeInsets(top: layoutMetrics.bottomBarTopInset,
@@ -404,6 +414,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             page: page
         ))
         window.center()
+        resizeWindowForCurrentTab(animated: false)
 
         preferencesKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, event.window === self.window, event.keyCode == 53 else { return event }
@@ -416,7 +427,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
                 self.window?.makeFirstResponder(nil)
                 return nil
             }
-            self.cancelAction()
+            self.window?.close()
             return nil
         }
     }
@@ -443,7 +454,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     }
 
     func controlTextDidChange(_ notification: Notification) {
-        refreshApplyButton()
+        // 数值输入过程中允许暂态空值/中间值；等编辑结束再校验并提交。
     }
 
     func controlTextDidEndEditing(_ notification: Notification) {
@@ -461,7 +472,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             if let window {
                 alert.beginSheetModal(for: window)
             }
+            return
         }
+        commitControlChanges()
     }
 
     required init?(coder: NSCoder) {
@@ -600,10 +613,57 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     }
 
     @objc private func controlChanged() {
-        // 仅同步依赖控件的可用状态；具体设置改由「应用更改」统一提交（取消/Esc 不落盘）。
+        // 先同步依赖控件的可用状态，再把当前合法控件值立即提交。
+        syncOpenModeControlStates()
+        commitControlChanges()
         themePopup.isEnabled = followSystemCheck.state != .on
         defaultLightThemePopup.isEnabled = followSystemCheck.state == .on
         defaultDarkThemePopup.isEnabled = followSystemCheck.state == .on
+    }
+
+    private func commitControlChanges() {
+        guard !isInitializingControls, invalidNumericFieldLabel() == nil else { return }
+        let oldLanguage = SettingsService.shared.settings.displayLanguage
+        var collected = SettingsService.shared.settings
+        collectSettings(into: &collected)
+        SettingsService.shared.update { $0 = collected }
+        AppWindowManager.shared.applyThemeModeToAll()
+        onSettingsChanged?()
+        FileAssociationService.shared.apply(settings: collected)
+        if collected.displayLanguage != oldLanguage {
+            DispatchQueue.main.async {
+                AppWindowManager.shared.applyLanguage()
+            }
+        }
+    }
+
+    /// 关闭多标签页时，禁用依赖新标签页的选项；工作区方式整体保持默认展示。
+    private func syncOpenModeControlStates() {
+        let multiTabEnabled = multiTabCheck.state == .on
+        let externalNewTabIndex = ExternalFileOpenPreferenceModel.selectedIndex(for: .newTab)
+        let externalCurrentTabIndex = ExternalFileOpenPreferenceModel.selectedIndex(for: .currentWindow)
+
+        externalFileOpenModePopup.autoenablesItems = false
+        if let items = externalFileOpenModePopup.menu?.items,
+           externalNewTabIndex < items.count {
+            items[externalNewTabIndex].isEnabled = MultiTabModePolicy.externalNewTabItemEnabled(multiTabEnabled: multiTabEnabled)
+        }
+        if !multiTabEnabled,
+           externalFileOpenModePopup.indexOfSelectedItem == externalNewTabIndex {
+            externalFileOpenModePopup.selectItem(at: externalCurrentTabIndex)
+        }
+
+        workspaceOpenModePopup.isEnabled = MultiTabModePolicy.workspaceControlsEnabled(
+            multiTabEnabled: multiTabEnabled
+        )
+        let savedWorkspaceOpensInNewTab = SettingsService.shared.settings.workspaceOpenInNewTab
+        let displayedWorkspaceOpensInNewTab = MultiTabModePolicy.workspaceDisplayPrefersNewTab(
+            saved: savedWorkspaceOpensInNewTab,
+            multiTabEnabled: multiTabEnabled
+        )
+        workspaceOpenModePopup.selectItem(at: WorkspaceFileOpenPreferenceModel.selectedIndex(
+            opensInNewTab: displayedWorkspaceOpensInNewTab
+        ))
     }
 
     /// 从当前控件收集设置（不写盘）。
@@ -617,13 +677,24 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         }
         settings.autoSaveEnabled = autoSaveCheck.state == .on
         settings.saveOnDocumentSwitch = saveOnSwitchCheck.state == .on
-        settings.externalFileOpenMode = ExternalFileOpenPreferenceModel.mode(
+        let multiTabEnabled = multiTabCheck.state == .on
+        let selectedExternalFileOpenMode = ExternalFileOpenPreferenceModel.mode(
             at: externalFileOpenModePopup.indexOfSelectedItem
         )
-        settings.workspaceOpenInNewTab = WorkspaceFileOpenPreferenceModel.opensInNewTab(
+        let savedExternalFileOpenMode = MultiTabModePolicy.externalFileMode(
+            selectedExternalFileOpenMode,
+            multiTabEnabled: multiTabEnabled
+        )
+        settings.multiTabEnabled = multiTabEnabled
+        settings.externalFileOpenMode = savedExternalFileOpenMode
+        let selectedWorkspaceOpensInNewTab = WorkspaceFileOpenPreferenceModel.opensInNewTab(
             at: workspaceOpenModePopup.indexOfSelectedItem
         )
-        settings.multiTabEnabled = multiTabCheck.state == .on
+        let displayedWorkspaceOpensInNewTab = MultiTabModePolicy.workspaceDisplayPrefersNewTab(
+            saved: selectedWorkspaceOpensInNewTab,
+            multiTabEnabled: multiTabEnabled
+        )
+        settings.workspaceOpenInNewTab = displayedWorkspaceOpensInNewTab
         settings.snapshotIntervalSeconds = Int(snapshotIntervalField.stringValue) ?? 30
         settings.defaultEncoding = DocumentEncodingPolicy.defaultEncoding(
             rawValue: defaultEncodingPopup.titleOfSelectedItem ?? DocumentEncodingPolicy.utf8.rawValue
@@ -680,42 +751,6 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             settings.displayLanguage = languageCodes[languagePopup.indexOfSelectedItem]
         }
         settings.clampSettingRanges()
-    }
-
-    @objc private func okAction() {
-        if let invalidMessage = invalidNumericFieldLabel() {
-            let alert = NSAlert()
-            alert.messageText = invalidMessage
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: L10n.t("好"))
-            alert.beginSheetModal(for: window!)
-            return
-        }
-        let oldLanguage = SettingsService.shared.settings.displayLanguage
-        var collected = SettingsService.shared.settings
-        collectSettings(into: &collected)
-        SettingsService.shared.update { $0 = collected }
-        controlChanged()
-        AppWindowManager.shared.applyThemeModeToAll()
-        onSettingsChanged?()
-        // 文件关联开关变更 → 立即应用（绑定/还原默认打开程序）
-        FileAssociationService.shared.apply(settings: collected)
-        // 语言变更 → 立即生效（重建菜单/偏好设置/各窗口 + 前端）
-        if collected.displayLanguage != oldLanguage {
-            DispatchQueue.main.async {
-                AppWindowManager.shared.applyLanguage()
-            }
-        }
-        window?.close()
-    }
-
-    @objc private func cancelAction() {
-        window?.close()
-    }
-
-    /// 任一数值字段无效时禁用「应用更改」，与导出自定义边距弹窗行为一致。
-    private func refreshApplyButton() {
-        applyButton?.isEnabled = invalidNumericFieldLabel() == nil
     }
 
     /// 数值字段校验：返回第一个无效字段的错误文案（nil 表示全部有效）。
@@ -1190,7 +1225,6 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     }
 
     private func fieldRow(_ field: NSTextField, unit: String) -> NSView {
-        field.widthAnchor.constraint(equalToConstant: 80).isActive = true
         let stack = NSStackView()
         stack.orientation = .horizontal
         stack.spacing = 6
