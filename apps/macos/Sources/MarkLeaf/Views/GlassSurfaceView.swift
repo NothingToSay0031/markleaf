@@ -27,6 +27,13 @@ final class GlassSurfaceView: NSView {
             case .regular, .interactive: return .windowBackground
             }
         }
+
+        var cornerRadius: CGFloat {
+            switch self {
+            case .interactive: return 12
+            case .regular, .clear, .sidebar: return 0
+            }
+        }
     }
 
     static let systemSupportsGlass: Bool = {
@@ -141,6 +148,7 @@ final class GlassSurfaceView: NSView {
             if #available(macOS 27, *) {
                 effect.effectIsInteractive = style == .interactive
             }
+            effect.cornerRadius = style.cornerRadius
             effect.translatesAutoresizingMaskIntoConstraints = false
             addSubview(effect)
             glassEffectView = effect
@@ -181,6 +189,7 @@ final class GlassSurfaceView: NSView {
         if #available(macOS 27, *) {
             glassEffectView?.effectIsInteractive = style == .interactive
         }
+        glassEffectView?.cornerRadius = style.cornerRadius
     }
 
     private func constrain(_ backing: NSView) {
@@ -190,6 +199,12 @@ final class GlassSurfaceView: NSView {
             backing.topAnchor.constraint(equalTo: topAnchor),
             backing.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
+    }
+
+    var glassCornerRadiusForTesting: CGFloat {
+        guard #available(macOS 26, *),
+              let effect = glassEffectView as? NSGlassEffectView else { return 0 }
+        return effect.cornerRadius
     }
 
     private func constrainOverlay(_ content: NSView) {

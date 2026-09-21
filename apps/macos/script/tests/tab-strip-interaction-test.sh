@@ -17,6 +17,7 @@ require() {
 
 # Browser-style creation must have a direct, accessible tab-bar control.
 require 'private let newTabButton' "$TAB_BAR" 'tab strip must expose a new-tab button'
+require 'glassSurface = GlassSurfaceView(style: .interactive)' "$TAB_BAR" 'tab strip must use rounded interactive Liquid Glass'
 require 'onNewTab?()' "$TAB_BAR" 'new-tab button must call the window action'
 require 'tabBar.onNewTab' "$WINDOW" 'window must create an untitled tab from the plus button'
 

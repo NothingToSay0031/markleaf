@@ -28,7 +28,7 @@ final class TabBarController: NSView {
     var onTearOff: ((DocumentTabID, NSPoint) -> Void)?
     var statusProvider: ((DocumentTabID) -> (isReadOnly: Bool, hasExternalChange: Bool))?
     private let stack = NSStackView()
-    private let glassSurface = GlassSurfaceView(style: .regular)
+    private let glassSurface = GlassSurfaceView(style: .interactive)
     private let newTabButton = NSButton()
     private let overflowButton = NSPopUpButton(frame: .zero, pullsDown: false)
     private unowned let tabStore: TabStore
