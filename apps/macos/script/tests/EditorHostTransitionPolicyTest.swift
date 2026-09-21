@@ -15,5 +15,12 @@ expect(!EditorHostTransitionPolicy.shouldAnimate(from: "a", to: "b", requested: 
        "reduce motion disables tab transitions")
 expect(!EditorHostTransitionPolicy.shouldAnimate(from: "a", to: "a", requested: true, reduceMotion: false),
        "reselecting the active tab does not animate")
+expect(!EditorHostTransitionPolicy.shouldAnimate(
+    from: "a",
+    to: "b",
+    requested: true,
+    reduceMotion: false,
+    targetHasThemedFrame: false
+), "an unthemed new tab must not fade its WebKit cover")
 
 print("PASS")

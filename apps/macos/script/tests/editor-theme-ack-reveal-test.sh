@@ -24,7 +24,8 @@ ready_line="$(grep -n 'case "ready":' "$SESSION" | head -1 | cut -d: -f1)"
 waiting_line="$(awk -v ready="$ready_line" 'NR > ready && /isWaitingForStylesAcknowledgement = true/ { print NR; exit }' "$SESSION")"
 apply_line="$(awk -v ready="$ready_line" 'NR > ready && /applyStyles\(\)/ { print NR; exit }' "$SESSION")"
 ack_handler_line="$(grep -n 'case "stylesApplied":' "$SESSION" | head -1 | cut -d: -f1)"
-reveal_line="$(awk -v ack="$ack_handler_line" 'NR > ack && /revealEditorAfterScreenUpdate\(\)/ { print NR; exit }' "$SESSION")"
+loaded_line="$(grep -n 'case "documentLoaded":' "$SESSION" | head -1 | cut -d: -f1)"
+reveal_line="$(awk -v loaded="$loaded_line" 'NR > loaded && /revealEditorAfterScreenUpdate\(\)/ { print NR; exit }' "$SESSION")"
 
 if [ -z "$waiting_line" ] || [ -z "$apply_line" ] || [ "$waiting_line" -ge "$apply_line" ]; then
   echo "FAIL: ready must wait for the style acknowledgement before revealing" >&2
@@ -32,12 +33,17 @@ if [ -z "$waiting_line" ] || [ -z "$apply_line" ] || [ "$waiting_line" -ge "$app
 fi
 
 if [ -z "$ack_handler_line" ] || [ -z "$reveal_line" ]; then
-  echo "FAIL: the editor must reveal only after stylesApplied" >&2
+  echo "FAIL: the editor must reveal only after documentLoaded" >&2
+  exit 1
+fi
+
+styles_block="$(sed -n "${ack_handler_line},${loaded_line}p" "$SESSION")"
+if printf '%s\n' "$styles_block" | grep -Fq 'revealEditorAfterScreenUpdate()'; then
+  echo "FAIL: stylesApplied must not reveal before the document has loaded" >&2
   exit 1
 fi
 
 restart_state_line="$(grep -n 'isRestartingEditor = true' "$SESSION" | head -1 | cut -d: -f1)"
-loaded_line="$(grep -n 'case "documentLoaded":' "$SESSION" | head -1 | cut -d: -f1)"
 loaded_reveal_line="$(awk -v loaded="$loaded_line" 'NR > loaded && /revealEditorAfterScreenUpdate\(\)/ { print NR; exit }' "$SESSION")"
 
 if [ -z "$restart_state_line" ] || [ -z "$loaded_reveal_line" ]; then
@@ -120,6 +126,24 @@ if [ -z "$prepare_init_line" ]; then
   exit 1
 fi
 
+init_block="$(sed -n "${init_line},${load_line}p" "$CONTAINER")"
+if printf '%s\n' "$init_block" | grep -Fq 'underPageBackgroundColor = initialDark ? .black : .white'; then
+  echo "FAIL: a new tab must initialize WebKit with the selected theme background, not the system default" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$init_block" | grep -Fq 'themeBackgroundColor ?? fallbackBackground'; then
+  echo "FAIL: a new tab must resolve the saved theme before creating its WebKit fallback background" >&2
+  exit 1
+fi
+
+apply_theme_line="$(grep -n 'func applyThemeAppearance' "$CONTAINER" | head -1 | cut -d: -f1)"
+reveal_func_line="$(grep -n 'func revealEditor()' "$CONTAINER" | head -1 | cut -d: -f1)"
+apply_theme_block="$(sed -n "${apply_theme_line},${reveal_func_line}p" "$CONTAINER")"
+if ! printf '%s\n' "$apply_theme_block" | grep -Fq 'reloadCoverView?.layer?.backgroundColor = background.cgColor'; then
+  echo "FAIL: resolving the saved theme must repaint the new-tab cover before stylesApplied" >&2
+  exit 1
+fi
+
 snapshot_func_line="$(grep -n 'func revealEditorAfterScreenUpdate()' "$CONTAINER" | head -1 | cut -d: -f1)"
 snapshot_call_line="$(awk -v snapshot="$snapshot_func_line" 'NR > snapshot && /takeSnapshot\(/ { print NR; exit }' "$CONTAINER")"
 early_reveal_line="$(awk -v snapshot="$snapshot_func_line" -v call="$snapshot_call_line" 'NR > snapshot && NR < call && /revealEditor\(\)/ { print NR; exit }' "$CONTAINER")"
@@ -131,7 +155,7 @@ fi
 
 if ! grep -Fq 'reloadCoverView' "$CONTAINER" \
    || ! grep -Fq 'positioned: .above, relativeTo: webView' "$CONTAINER" \
-   || ! grep -Fq 'reloadCoverView?.removeFromSuperview()' "$CONTAINER"; then
+   || ! grep -Fq 'cover.removeFromSuperview()' "$CONTAINER"; then
   echo "FAIL: reload must use an opaque cover above the webview until the themed frame commits" >&2
   exit 1
 fi
@@ -139,6 +163,13 @@ fi
 if sed -n '/private func revealEditorAfterThemeApplied/,/private func applyPreferences/p' "$SESSION" \
     | grep -Fq 'evaluateJavaScript("1")'; then
   echo "FAIL: an empty script must not gate dark-mode first paint" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'private(set) var hasThemedFrame = false' "$CONTAINER" \
+   || ! grep -Fq 'hasThemedFrame = true' "$CONTAINER" \
+   || ! grep -Fq 'hasThemedFrame = false' "$CONTAINER"; then
+  echo "FAIL: tab transition must wait for a committed themed frame" >&2
   exit 1
 fi
 

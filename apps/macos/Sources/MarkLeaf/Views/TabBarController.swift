@@ -28,9 +28,9 @@ final class TabBarController: NSView {
     var onTearOff: ((DocumentTabID, NSPoint) -> Void)?
     var statusProvider: ((DocumentTabID) -> (isReadOnly: Bool, hasExternalChange: Bool))?
     private let stack = NSStackView()
-    private let glassSurface = GlassSurfaceView(style: .interactive)
+    private let glassSurface = GlassSurfaceView(style: .regular)
     private let newTabButton = NSButton()
-    private let overflowButton = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let overflowButton = NSButton()
     private unowned let tabStore: TabStore
     private var cellsByTab: [DocumentTabID: TabCellView] = [:]
     private var stackLeading: NSLayoutConstraint!
@@ -53,11 +53,12 @@ final class TabBarController: NSView {
     private weak var hoveredTabBar: TabBarController?
     private var heightConstraint: NSLayoutConstraint!
 
-    init(tabStore: TabStore) {
+    init(tabStore: TabStore, themeIsDark: Bool) {
         self.tabStore = tabStore
         super.init(frame: .zero)
         wantsLayer = true
         layer?.masksToBounds = true
+        layer?.cornerRadius = 12
         translatesAutoresizingMaskIntoConstraints = false
         heightConstraint = heightAnchor.constraint(equalToConstant: Self.preferredHeight)
         heightConstraint.isActive = true
@@ -69,6 +70,8 @@ final class TabBarController: NSView {
         stack.edgeInsets = NSEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
         stack.translatesAutoresizingMaskIntoConstraints = false
         glassSurface.translatesAutoresizingMaskIntoConstraints = false
+        glassSurface.cornerRadiusOverride = 12
+        glassSurface.setPreferredDark(themeIsDark)
         addSubview(glassSurface)
         glassSurface.setContent(stack)
         // In the full-size window layout the backing can reach the title bar,
@@ -77,10 +80,10 @@ final class TabBarController: NSView {
         configureNewTabButton()
         configureOverflowButton()
         NSLayoutConstraint.activate([
-            glassSurface.leadingAnchor.constraint(equalTo: leadingAnchor),
-            glassSurface.trailingAnchor.constraint(equalTo: newTabButton.leadingAnchor, constant: -4),
-            glassSurface.topAnchor.constraint(equalTo: topAnchor),
-            glassSurface.bottomAnchor.constraint(equalTo: bottomAnchor),
+            glassSurface.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+            glassSurface.trailingAnchor.constraint(equalTo: newTabButton.leadingAnchor, constant: -8),
+            glassSurface.topAnchor.constraint(equalTo: topAnchor, constant: 2),
+            glassSurface.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
             stackLeading,
             stack.topAnchor.constraint(equalTo: glassSurface.topAnchor),
             stack.trailingAnchor.constraint(equalTo: glassSurface.trailingAnchor),
@@ -146,6 +149,8 @@ final class TabBarController: NSView {
         overflowButton.refusesFirstResponder = false
         overflowButton.focusRingType = .default
         overflowButton.setAccessibilityLabel(L10n.t("所有标签"))
+        overflowButton.target = self
+        overflowButton.action = #selector(showOverflowMenu)
         addSubview(overflowButton)
     }
 
@@ -155,6 +160,7 @@ final class TabBarController: NSView {
 
     func reload() {
         guard !isReordering else { return }
+        glassSurface.setBackingHidden(tabStore.tabs.isEmpty)
         motionGeneration += 1
         let generation = motionGeneration
         let existing = Set(cellsByTab.keys)
@@ -184,7 +190,6 @@ final class TabBarController: NSView {
             cellsByTab[tab.tabID] = cell
             configure(cell, for: tab)
         }
-        rebuildOverflowMenu()
         updateOverflowVisibility()
 
         let needsMotion = !insertedCells.isEmpty || !removedCells.isEmpty || orderChanged
@@ -593,16 +598,23 @@ final class TabBarController: NSView {
 
     // MARK: - 溢出菜单
 
-    private func rebuildOverflowMenu() {
-        overflowButton.menu?.removeAllItems()
+    @objc private func showOverflowMenu() {
+        guard !overflowButton.isHidden, !tabStore.tabs.isEmpty else { return }
+        NSMenu.popUpContextMenu(overflowMenu(), with: NSApplication.shared.currentEvent ?? NSEvent(), for: overflowButton)
+    }
+
+    private func overflowMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
         for tab in tabStore.tabs {
             let prefix = tab.isDirty ? "● " : ""
             let item = NSMenuItem(title: prefix + tab.title, action: #selector(overflowSelect(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = tab.tabID.rawValue
             item.state = tabStore.activeTabID == tab.tabID ? .on : .off
-            overflowButton.menu?.addItem(item)
+            menu.addItem(item)
         }
+        return menu
     }
 
     @objc private func overflowSelect(_ sender: NSMenuItem) {
@@ -873,8 +885,12 @@ final class TabCellView: NSView {
         let applyColors = { [weak self] in
             guard let self else { return }
             self.effectiveAppearance.performAsCurrentDrawingAppearance {
-                let backgroundColor = EditorTabStripMaterial.selectionBackgroundColor(isActive: self.isActive)
-                self.layer?.backgroundColor = backgroundColor
+                let fill = self.isActive
+                    ? NSColor.controlBackgroundColor.withAlphaComponent(0.34)
+                    : .clear
+                self.layer?.backgroundColor = fill.cgColor
+                self.layer?.borderWidth = 0
+                self.layer?.borderColor = nil
             }
             self.titleLabel.textColor = recoveryUnavailable
                 ? .systemOrange

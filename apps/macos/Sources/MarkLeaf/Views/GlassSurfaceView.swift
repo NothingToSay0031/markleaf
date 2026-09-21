@@ -42,6 +42,18 @@ final class GlassSurfaceView: NSView {
     }()
 
     let style: Style
+    /// Optional per-surface radius for regions whose shape differs from the
+    /// default style (for example the editor tab strip).
+    var cornerRadiusOverride: CGFloat? = nil {
+        didSet {
+            guard cornerRadiusOverride != oldValue else { return }
+            if #available(macOS 26, *), shouldUseGlass,
+               let effect = glassEffectView as? NSGlassEffectView {
+                effect.cornerRadius = cornerRadiusOverride ?? style.cornerRadius
+            }
+            layer?.cornerRadius = cornerRadiusOverride ?? 0
+        }
+    }
     private(set) var contentSurface: NSView?
     private var legacyEffectView: NSVisualEffectView?
     private var glassEffectView: AnyObject?
@@ -49,6 +61,8 @@ final class GlassSurfaceView: NSView {
     private var contentTopConstraint: NSLayoutConstraint?
     private var contentSafeTopConstraint: NSLayoutConstraint?
     private var contentRespectsTopSafeArea = false
+    private var preferredDark: Bool?
+    private var fallbackBackgroundColor: NSColor?
 
     /// Apple only guarantees controls placed in `NSGlassEffectView.contentView`
     /// participate in the glass shape. Standard controls such as segmented
@@ -63,10 +77,13 @@ final class GlassSurfaceView: NSView {
         }
     }
 
-    init(style: Style) {
+    init(style: Style, preferredDark: Bool? = nil, fallbackBackgroundColor: NSColor? = nil) {
         self.style = style
+        self.preferredDark = preferredDark
+        self.fallbackBackgroundColor = fallbackBackgroundColor
         super.init(frame: .zero)
         wantsLayer = true
+        layer?.backgroundColor = fallbackBackgroundColor?.cgColor
         translatesAutoresizingMaskIntoConstraints = false
         GlassSurfaceRegistry.shared.register(self)
         rebuildSurface()
@@ -107,13 +124,46 @@ final class GlassSurfaceView: NSView {
             rebuildSurface()
             return
         }
-        let dark = forceDark ?? (effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
+        // preferredDark is only a pre-attachment seed. Once the surface joins
+        // a window, AppKit's resolved appearance must win; otherwise an initial
+        // dark seed would resurrect dark glass after switching to light.
+        let seededDark = window == nil ? preferredDark : nil
+        let dark = forceDark ?? seededDark
+            ?? (effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
         let active = window?.isKeyWindow == true
         applyAppearance(dark: dark, active: active, reducedTransparency: reduceTransparency)
     }
 
+    /// Hides the backing and its private effect subview. macOS 26/27 can keep
+    /// drawing `NSGlassEffectView` when only the outer AppKit view is marked
+    /// hidden, so all three layers need the same state.
+    func setBackingHidden(_ hidden: Bool) {
+        isHidden = hidden
+        layer?.isHidden = hidden
+        (glassEffectView as? NSView)?.isHidden = hidden
+        legacyEffectView?.isHidden = hidden
+    }
+
+    /// Prevents a newly installed surface from drawing one launch frame with
+    /// the process/window's stale appearance before AppKit propagates the
+    /// resolved editor theme.
+    func setPreferredDark(_ dark: Bool?) {
+        preferredDark = dark
+        refresh(forceDark: dark)
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        // The opaque fallback only protects the pre-window creation frame.
+        // Once AppKit attaches the surface, NSGlassEffectView owns the visual;
+        // leaving the fallback in place would flatten Liquid Glass to grey.
+        if window != nil {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.window != nil else { return }
+                self.fallbackBackgroundColor = nil
+                self.layer?.backgroundColor = nil
+            }
+        }
         refresh()
     }
 
@@ -148,7 +198,7 @@ final class GlassSurfaceView: NSView {
             if #available(macOS 27, *) {
                 effect.effectIsInteractive = style == .interactive
             }
-            effect.cornerRadius = style.cornerRadius
+            effect.cornerRadius = cornerRadiusOverride ?? style.cornerRadius
             effect.translatesAutoresizingMaskIntoConstraints = false
             addSubview(effect)
             glassEffectView = effect
@@ -178,6 +228,7 @@ final class GlassSurfaceView: NSView {
     private func applyAppearance(dark: Bool, active: Bool, reducedTransparency: Bool) {
         let themedAppearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         appearance = themedAppearance
+        layer?.backgroundColor = fallbackBackgroundColor?.cgColor
         legacyEffectView?.state = active ? .active : .inactive
         legacyEffectView?.material = reducedTransparency ? .windowBackground : style.legacyMaterial
         guard #available(macOS 26, *) else { return }
@@ -189,7 +240,7 @@ final class GlassSurfaceView: NSView {
         if #available(macOS 27, *) {
             glassEffectView?.effectIsInteractive = style == .interactive
         }
-        glassEffectView?.cornerRadius = style.cornerRadius
+        glassEffectView?.cornerRadius = cornerRadiusOverride ?? style.cornerRadius
     }
 
     private func constrain(_ backing: NSView) {

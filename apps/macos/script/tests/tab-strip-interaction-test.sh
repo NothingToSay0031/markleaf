@@ -17,7 +17,7 @@ require() {
 
 # Browser-style creation must have a direct, accessible tab-bar control.
 require 'private let newTabButton' "$TAB_BAR" 'tab strip must expose a new-tab button'
-require 'glassSurface = GlassSurfaceView(style: .interactive)' "$TAB_BAR" 'tab strip must use rounded interactive Liquid Glass'
+require 'glassSurface = GlassSurfaceView(style: .regular)' "$TAB_BAR" 'tab strip must use one rounded Liquid Glass backing'
 require 'onNewTab?()' "$TAB_BAR" 'new-tab button must call the window action'
 require 'tabBar.onNewTab' "$WINDOW" 'window must create an untitled tab from the plus button'
 
@@ -35,6 +35,8 @@ require 'onClose?()' "$TAB_BAR" 'middle click must invoke the normal close actio
 # Safari-style layout keeps the tab strip full-width and splits available space equally.
 require 'stack.distribution = .fillEqually' "$TAB_BAR" 'tabs must divide the available strip width equally'
 require 'glassSurface.trailingAnchor.constraint(equalTo: newTabButton.leadingAnchor' "$TAB_BAR" 'glass-backed tab strip must consume all space before the plus button'
+require 'glassSurface.setBackingHidden(tabStore.tabs.isEmpty)' "$TAB_BAR" 'empty tab strips must hide all glass backing layers'
+require 'func setBackingHidden' "$ROOT_DIR/Sources/MarkLeaf/Views/GlassSurfaceView.swift" 'empty tab strips must hide the private effect subview'
 require 'TabAnimationPolicy.duration(for: .insertRemoveReorder' "$TAB_BAR" 'new tabs must use the existing smooth layout animation policy'
 
 echo "PASS"

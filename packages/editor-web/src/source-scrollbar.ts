@@ -91,7 +91,7 @@ export class SourceScrollbarOverlay {
 
     this.container.style.top = `${scrollerRect.top - hostRect.top}px`
     this.container.style.height = `${scrollerRect.height}px`
-    this.container.style.right = `${hostRect.right - scrollerRect.right + 3}px`
+    this.container.style.right = `${hostRect.right - scrollerRect.right + 2}px`
     this.container.style.display = geometry.visible ? 'block' : 'none'
     this.thumb.style.transform = `translateY(${geometry.top}px)`
     this.thumb.style.height = `${geometry.height}px`

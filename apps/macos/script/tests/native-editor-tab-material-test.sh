@@ -18,20 +18,16 @@ grep -Fq 'accessibilityDisplayShouldReduceTransparency' "$MATERIAL" || {
   echo "FAIL: selection material must own the reduced-transparency fallback" >&2
   exit 1
 }
-grep -Fq 'static func selectionBackgroundColor(isActive: Bool) -> CGColor' "$MATERIAL" || {
-  echo "FAIL: tab cells must ask the material owner for selection color" >&2
+grep -Fq 'static var supportsSystemSelectionMaterial' "$MATERIAL" || {
+  echo "FAIL: tab selection must use the shared Liquid Glass capability check" >&2
   exit 1
 }
-grep -Fq 'EditorTabStripMaterial.selectionBackgroundColor(isActive:' "$TAB_BAR" || {
-  echo "FAIL: tab cells must not own selection colors directly" >&2
+grep -Fq 'private let glassSurface = GlassSurfaceView(style: .regular)' "$TAB_BAR" || {
+  echo "FAIL: tab strip must use one shared regular glass backing" >&2
   exit 1
 }
-if grep -q 'NSColor.controlBackgroundColor.cgColor' "$TAB_BAR"; then
-  echo "FAIL: tab cells must not freeze selection colors locally" >&2
-  exit 1
-fi
-if grep -q 'NSGlassEffectView' "$TAB_BAR"; then
-  echo "FAIL: individual tab cells must not add their own glass layers" >&2
+if grep -q 'selectionGlass' "$TAB_BAR"; then
+  echo "FAIL: active tabs must not add a second glass layer" >&2
   exit 1
 fi
 

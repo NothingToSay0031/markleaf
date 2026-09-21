@@ -58,7 +58,8 @@ final class EditorHostView: NSView {
             from: previousID,
             to: tabID.rawValue,
             requested: animated,
-            reduceMotion: reduceMotion
+            reduceMotion: reduceMotion,
+            targetHasThemedFrame: target.hasThemedFrame
         ) ? TabAnimationPolicy.duration(for: .editorFade, reduceMotion: false) : 0
         guard duration > 0 else {
             viewsByTab.forEach { id, view in

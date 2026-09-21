@@ -5,8 +5,10 @@ enum EditorHostTransitionPolicy {
         from previousTabID: String?,
         to targetTabID: String,
         requested: Bool,
-        reduceMotion: Bool
+        reduceMotion: Bool,
+        targetHasThemedFrame: Bool = true
     ) -> Bool {
-        requested && !reduceMotion && previousTabID != nil && previousTabID != targetTabID
+        requested && targetHasThemedFrame && !reduceMotion
+            && previousTabID != nil && previousTabID != targetTabID
     }
 }

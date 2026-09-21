@@ -45,7 +45,7 @@ export function createReadingBehavior(getEditor: () => Editor | undefined, topIn
       autoHide = enabled
       document.documentElement.classList.toggle('markleaf-auto-hide-scrollbar', enabled)
       document.body.classList.toggle('markleaf-auto-hide-scrollbar', enabled)
-      if (!enabled) { clearTimeout(hideTimer); alpha.reset(0) }
+      if (!enabled) { clearTimeout(hideTimer); alpha.reset(1) }
     },
     dispose(): void { events.abort(); unbindMotion(); cancelAnimationFrame(frame); clearTimeout(hideTimer); alpha.reset(0) },
   }

@@ -6,6 +6,7 @@ import AppKit
 /// 只有抽样像素达到主题底色时，才允许移除加载遮罩。
 enum ThemeFrameReadinessPolicy {
     static let tolerance: CGFloat = 0.035
+    static let timeout: TimeInterval = 1.0
 
     static func isReady(pixel: NSColor, target: NSColor) -> Bool {
         guard let sample = pixel.usingColorSpace(.sRGB),
@@ -20,6 +21,18 @@ enum ThemeFrameReadinessPolicy {
         return differences.allSatisfy { $0 <= tolerance }
     }
 
+    /// WebKit can commit stale and prepared regions in the same frame. Margin
+    /// samples cover the whole viewport while avoiding prose text; three hits
+    /// are enough to accept a blank-background frame without requiring every
+    /// sample to dodge inline content.
+    static func isReady(pixels: [NSColor?], target: NSColor) -> Bool {
+        let matchingCount = pixels
+            .compactMap { $0 }
+            .filter { isReady(pixel: $0, target: target) }
+            .count
+        return matchingCount >= min(3, pixels.count)
+    }
+
     static func shouldContinueWaiting(
         didCapture: Bool,
         pixel: NSColor?,
@@ -29,5 +42,20 @@ enum ThemeFrameReadinessPolicy {
     ) -> Bool {
         if let pixel, isReady(pixel: pixel, target: target) { return false }
         return elapsed < timeout
+    }
+
+    static func shouldContinueWaiting(
+        didCapture: Bool,
+        pixels: [NSColor?],
+        target: NSColor,
+        elapsed: TimeInterval,
+        matchingStableCount: Int,
+        requiredStableCount: Int = 2,
+        timeout: TimeInterval = 1.0
+    ) -> Bool {
+        guard didCapture, isReady(pixels: pixels, target: target) else {
+            return elapsed < timeout
+        }
+        return matchingStableCount < requiredStableCount
     }
 }

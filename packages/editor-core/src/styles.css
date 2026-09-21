@@ -692,8 +692,8 @@ body.markleaf-theme-dark {
 
 /* 默认滚动条宽度，颜色由各主题 colors-*.css 的 ::-webkit-scrollbar-thumb 控制。 */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 /* 自动隐藏滚动条：收窄至 8px，空闲时滑块透明，滚动中或鼠标移至右边缘时显示。
@@ -701,8 +701,8 @@ body.markleaf-theme-dark {
 html.markleaf-auto-hide-scrollbar::-webkit-scrollbar,
 body.markleaf-auto-hide-scrollbar::-webkit-scrollbar,
 html.markleaf-auto-hide-scrollbar .cm-scroller::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 html.markleaf-auto-hide-scrollbar .cm-scroller {
@@ -712,7 +712,7 @@ html.markleaf-auto-hide-scrollbar .cm-scroller {
 .markleaf-source-scrollbar {
   position: absolute;
   right: 0;
-  width: 8px;
+  width: 6px;
   pointer-events: none;
   z-index: 20;
 }
@@ -721,7 +721,7 @@ html.markleaf-auto-hide-scrollbar .cm-scroller {
   position: absolute;
   left: 0;
   width: 100%;
-  border-radius: 4px;
+  border-radius: 3px;
   background: color-mix(
     in srgb,
     var(--scrollbar-active, rgba(0, 0, 0, 0.35))
@@ -741,7 +741,7 @@ html.markleaf-auto-hide-scrollbar .cm-scroller::-webkit-scrollbar-thumb {
     calc(var(--ml-scrollbar-alpha, 0) * 100%),
     transparent
   );
-  border-radius: 4px;
+  border-radius: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {

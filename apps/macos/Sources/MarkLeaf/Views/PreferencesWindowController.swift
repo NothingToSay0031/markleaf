@@ -133,6 +133,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         // windows bleed through the preference titlebar.
         window.isOpaque = true
         window.backgroundColor = .windowBackgroundColor
+        FloatingWindowChrome.register(window)
         window.center()
         super.init(window: window)
 

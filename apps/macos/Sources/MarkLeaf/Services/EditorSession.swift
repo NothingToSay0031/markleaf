@@ -423,9 +423,9 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
         case "stylesApplied":
             guard isWaitingForStylesAcknowledgement else { break }
             isWaitingForStylesAcknowledgement = false
-            if !isRestartingEditor {
-                (webView?.superview as? EditorWebContainerView)?.revealEditorAfterScreenUpdate()
-            }
+            // Do not reveal here. A blank document can acknowledge styles before
+            // its ProseMirror document commit; revealing at this boundary leaves a
+            // one-frame window where WebKit can present an unprepared surface.
 
         case "documentLoaded":
             AppLog.info("文档加载完成")
@@ -453,10 +453,8 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
             if let notice = startupRecoveryNotice(for: message) {
                 statusText = notice
             }
-            if isRestartingEditor {
-                isRestartingEditor = false
-                (webView?.superview as? EditorWebContainerView)?.revealEditorAfterScreenUpdate()
-            }
+            isRestartingEditor = false
+            (webView?.superview as? EditorWebContainerView)?.revealEditorAfterScreenUpdate()
 
         case "snapshot":
             let markdown = payload?["markdown"] as? String ?? ""
@@ -1477,6 +1475,7 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
                let background = self.themeBackgroundColor {
                 controller.applySurfaceBackground(background)
             }
+            FloatingWindowChrome.refreshAll(dark: dark)
             // AppKit propagates appearance changes on the next layout pass.
             // Refreshing synchronously samples the previous effective
             // appearance and leaves Liquid Glass panes stuck on the old mode.

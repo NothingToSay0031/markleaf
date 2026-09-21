@@ -29,6 +29,21 @@ extension FloatingWindowClassification: CustomStringConvertible {
 /// keeps background editor windows from bleeding through on macOS 26/27 and
 /// gives earlier systems the same readable fallback.
 enum FloatingWindowChrome {
+    private static let windows = NSHashTable<NSWindow>.weakObjects()
+
+    static func register(_ window: NSWindow) {
+        windows.add(window)
+    }
+
+    static func refreshAll(dark: Bool) {
+        let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        for window in windows.allObjects {
+            window.appearance = appearance
+            window.backgroundColor = .windowBackgroundColor
+            window.isOpaque = true
+        }
+    }
+
     static func configure(_ window: NSWindow, classification: FloatingWindowClassification) {
         window.titlebarAppearsTransparent = false
         window.titleVisibility = .visible
@@ -36,6 +51,7 @@ enum FloatingWindowChrome {
         window.isOpaque = true
         window.backgroundColor = .windowBackgroundColor
         window.tabbingMode = .disallowed
+        register(window)
 
         window.standardWindowButton(.closeButton)?.isHidden = false
         window.standardWindowButton(.miniaturizeButton)?.isHidden = false

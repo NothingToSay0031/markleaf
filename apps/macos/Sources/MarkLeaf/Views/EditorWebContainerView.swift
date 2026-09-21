@@ -177,6 +177,7 @@ final class EditorWebContainerView: NSView, WKNavigationDelegate {
     private weak var session: EditorSession?
     private var didFinishLoadOnce = false
     private var reloadCoverView: NSView?
+    private(set) var hasThemedFrame = false
 
     init(session: EditorSession) {
         self.session = session
@@ -199,8 +200,9 @@ final class EditorWebContainerView: NSView, WKNavigationDelegate {
         let editorWebView = EditorWebView(frame: .zero, configuration: configuration)
         editorWebView.editorSession = session
         // 主题 CSS 生效前的兜底底色，避免任何早揭示路径闪白。
-        let initialDark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        editorWebView.underPageBackgroundColor = initialDark ? .black : .white
+        let fallbackBackground = NSColor.windowBackgroundColor
+        let initialBackground = session.themeBackgroundColor ?? fallbackBackground
+        editorWebView.underPageBackgroundColor = initialBackground
         // WKWebView's internal scroll view can briefly expose its default white
         // backing while its viewport is resized (notably during sidebar collapse).
         // Keep that backing transparent so the themed editor surface remains the
@@ -222,6 +224,9 @@ final class EditorWebContainerView: NSView, WKNavigationDelegate {
 
         // 深色模式防白闪：前端就绪前保持隐藏，露出系统/主题背景（对齐 Windows 1.1.3）。
         webView.isHidden = true
+
+        wantsLayer = true
+        layer?.backgroundColor = initialBackground.cgColor
 
         session.webView = webView
         // 拖放：图片文件插入，md/txt 打开
@@ -272,7 +277,10 @@ final class EditorWebContainerView: NSView, WKNavigationDelegate {
     /// 应用主题外观：color-scheme 让 WebKit 以深色绘制 overlay 滚动条/控件，
     /// appearance 同步系统控件。WKWebView 无公开的内部 NSScrollView，无法用 legacy 滚动条。
     func applyThemeAppearance(dark: Bool, legacyScrollers: Bool) {
-        webView.appearance = dark ? NSAppearance(named: .darkAqua) : nil
+        // Keep light mode explicit. Inheriting through nil can lag one
+        // appearance-propagation pass behind the parent window during a
+        // dark-to-light switch, leaving WebKit controls on the old palette.
+        webView.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         let scheme = dark ? "dark" : "light"
         webView.evaluateJavaScript("document.documentElement.style.colorScheme = '\(scheme)'") { _, error in
             if let error {
@@ -285,19 +293,38 @@ final class EditorWebContainerView: NSView, WKNavigationDelegate {
             webView.setValue(false, forKey: "drawsBackground")
             wantsLayer = true
             layer?.backgroundColor = background.cgColor
+            // The ready path resolves the saved theme after the cover was
+            // created with the catalog default. Repaint it before the frontend
+            // acknowledges styles so a tab-transition frame can never expose
+            // the previous theme color.
+            reloadCoverView?.wantsLayer = true
+            reloadCoverView?.layer?.backgroundColor = background.cgColor
         }
     }
 
     /// 编辑器前端就绪后揭示 WebView。
     func revealEditor() {
+        hasThemedFrame = true
+        wantsLayer = true
+        layer?.backgroundColor = (session?.themeBackgroundColor ?? .windowBackgroundColor).cgColor
+        if let cover = reloadCoverView {
+            cover.wantsLayer = true
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.08
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                cover.animator().alphaValue = 0
+            }, completionHandler: {
+                cover.removeFromSuperview()
+            })
+            reloadCoverView = nil
+        }
         webView.isHidden = false
-        reloadCoverView?.removeFromSuperview()
-        reloadCoverView = nil
     }
 
     /// 重载前先把旧页面从视觉树中移开；否则 WKWebView 会在深色模式中
     /// 先闪一帧未样式化的白色页面。
     func prepareForReload() {
+        hasThemedFrame = false
         let background = session?.themeBackgroundColor ?? .windowBackgroundColor
         if reloadCoverView == nil {
             let cover = NSView()
@@ -332,31 +359,56 @@ final class EditorWebContainerView: NSView, WKNavigationDelegate {
         configuration.afterScreenUpdates = true
         let target = session?.themeBackgroundColor ?? .windowBackgroundColor
         let startedAt = Date()
+        var stableReadyCount = 0
 
         func captureAndCheck() {
             webView.takeSnapshot(with: configuration) { [weak self] image, error in
                 DispatchQueue.main.async {
                     guard let self else { return }
-                    var pixel: NSColor?
+                    var pixels: [NSColor?] = []
                     if let cgImage = image?.cgImage(
                         forProposedRect: nil, context: nil, hints: nil
                     ) {
                         let rep = NSBitmapImageRep(cgImage: cgImage)
-                        let point = CGPoint(
-                            x: min(16, max(0, rep.pixelsWide - 1)),
-                            y: min(16, max(0, rep.pixelsHigh - 1))
-                        )
-                        pixel = rep.colorAt(x: Int(point.x), y: Int(point.y))
+                        let width = max(1, rep.pixelsWide)
+                        let height = max(1, rep.pixelsHigh)
+                        let inset: CGFloat = 16
+                        let samplePoints = [
+                            CGPoint(x: inset, y: inset),
+                            CGPoint(x: Double(width) * 0.25, y: inset),
+                            CGPoint(x: Double(width) * 0.5, y: inset),
+                            CGPoint(x: Double(width) * 0.75, y: inset),
+                            CGPoint(x: Double(width) - inset, y: inset),
+                            CGPoint(x: inset, y: Double(height) * 0.5),
+                            CGPoint(x: Double(width) - inset, y: Double(height) * 0.5),
+                            CGPoint(x: inset, y: Double(height) - inset),
+                            CGPoint(x: Double(width) * 0.5, y: Double(height) - inset),
+                            CGPoint(x: Double(width) - inset, y: Double(height) - inset),
+                        ]
+                        pixels = samplePoints.map { point in
+                            rep.colorAt(
+                                x: min(width - 1, max(0, Int(point.x))),
+                                y: min(height - 1, max(0, Int(point.y)))
+                            )
+                        }
                     }
                     let elapsed = Date().timeIntervalSince(startedAt)
+                    if ThemeFrameReadinessPolicy.isReady(pixels: pixels, target: target) {
+                        stableReadyCount += 1
+                    } else {
+                        stableReadyCount = 0
+                    }
                     if !ThemeFrameReadinessPolicy.shouldContinueWaiting(
                         didCapture: image != nil,
-                        pixel: pixel,
+                        pixels: pixels,
                         target: target,
-                        elapsed: elapsed
+                        elapsed: elapsed,
+                        matchingStableCount: stableReadyCount
                     ) {
                         if image == nil, let error {
                             AppLog.warning("等待主题首帧失败，按兜底路径揭示: \(error.localizedDescription)")
+                        } else if elapsed >= ThemeFrameReadinessPolicy.timeout {
+                            AppLog.warning("主题首帧校验超时，按兜底路径揭示")
                         }
                         self.revealEditor()
                         return

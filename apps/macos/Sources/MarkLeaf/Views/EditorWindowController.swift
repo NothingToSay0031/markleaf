@@ -82,7 +82,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     /// 注入 `windowSession` 后搭建标签栏并把初始标签挂到编辑器宿主。
     private func installMultiTabUI() {
         guard let windowSession, let rightColumn = rightColumnView, let editorHost = editorHostView else { return }
-        let tabBar = TabBarController(tabStore: windowSession.tabStore)
+        let tabBar = TabBarController(
+            tabStore: windowSession.tabStore,
+            themeIsDark: session.currentThemeIsDark
+        )
         tabBar.onActivate = { [weak self] id in self?.activateTab(id, animated: true) }
         tabBar.onClose = { [weak self] id in self?.closeTab(id, reason: .closeTab) }
         tabBar.onNewTab = { [weak self] in self?.newUntitledTab() }
@@ -147,6 +150,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         }
         tabBar.reload()
         applyMultiTabMode(animated: false)
+        if let window {
+            GlassSurfaceRegistry.shared.refreshSurfaces(in: window)
+        }
     }
 
     func applyMultiTabMode(animated: Bool) {
@@ -1116,14 +1122,22 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         outerSplitView.wantsLayer = true
 
         // 主窗口原生表面统一经过玻璃适配器；旧系统与减少透明度场景自动回退。
-        let sidebarContainer = GlassSurfaceView(style: .sidebar)
+        let sidebarContainer = GlassSurfaceView(
+            style: .sidebar,
+            preferredDark: session.currentThemeIsDark,
+            fallbackBackgroundColor: .windowBackgroundColor
+        )
         sidebarContainer.setContent(sidebarView)
         sidebarContainer.setContentRespectsTopSafeArea(true)
         sidebarView.translatesAutoresizingMaskIntoConstraints = false
         sidebarContainer.translatesAutoresizingMaskIntoConstraints = false
         self.sidebarContainerView = sidebarContainer
 
-        let detachedOutlineContainer = GlassSurfaceView(style: .sidebar)
+        let detachedOutlineContainer = GlassSurfaceView(
+            style: .sidebar,
+            preferredDark: session.currentThemeIsDark,
+            fallbackBackgroundColor: .windowBackgroundColor
+        )
         detachedOutlineContainer.setContent(detachedOutlineView)
         detachedOutlineContainer.setContentRespectsTopSafeArea(true)
         detachedOutlineView.translatesAutoresizingMaskIntoConstraints = false
@@ -1134,7 +1148,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         self.rightColumnView = rightColumn
         rightColumn.wantsLayer = true
         rightColumn.layer?.backgroundColor = (session.themeBackgroundColor ?? .windowBackgroundColor).cgColor
-        let titleBarGlassSurface = GlassSurfaceView(style: .regular)
+        let titleBarGlassSurface = GlassSurfaceView(
+            style: .regular,
+            preferredDark: session.currentThemeIsDark,
+            fallbackBackgroundColor: .windowBackgroundColor
+        )
         self.titleBarGlassSurface = titleBarGlassSurface
         titleBarGlassSurface.translatesAutoresizingMaskIntoConstraints = false
         rightColumn.addSubview(titleBarGlassSurface)
@@ -1242,7 +1260,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         rootView.addSubview(outerSplitView)
         rightColumn.addSubview(editorHost)
         rightColumn.addSubview(divider)
-        let statusBarSurface = GlassSurfaceView(style: .regular)
+        let statusBarSurface = GlassSurfaceView(
+            style: .regular,
+            preferredDark: session.currentThemeIsDark,
+            fallbackBackgroundColor: .windowBackgroundColor
+        )
         statusBarSurface.setContent(statusBar)
         self.statusBarSurface = statusBarSurface
         rightColumn.addSubview(statusBarSurface)

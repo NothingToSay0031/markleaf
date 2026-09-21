@@ -1006,6 +1006,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ sender: NSApplication,
         hasVisibleWindows flag: Bool
     ) -> Bool {
+        // A hidden app can keep its windows registered while every CGWindow
+        // is offscreen. Dock activation must first leave the hidden state,
+        // otherwise `activate` can appear to succeed without showing a window.
+        if NSApp.isHidden {
+            NSApp.unhide(nil)
+        }
         // Debug bundles launched through `open -n` may not receive the normal
         // Dock activation side effect. Always activate first so a visible
         // window is brought forward instead of leaving the Dock click silent.

@@ -18,4 +18,32 @@ expect(ThemeFrameReadinessPolicy.shouldContinueWaiting(didCapture: true, pixel: 
 expect(!ThemeFrameReadinessPolicy.shouldContinueWaiting(didCapture: true, pixel: white, target: dark, elapsed: 1.1), "timeout should provide a fallback reveal")
 expect(ThemeFrameReadinessPolicy.shouldContinueWaiting(didCapture: false, pixel: nil, target: dark, elapsed: 0), "missing captures should keep waiting")
 
+let darkSamples: [NSColor?] = [dark, dark, dark, white, dark, nil]
+let staleSamples: [NSColor?] = [white, white, white, white, white, nil]
+expect(ThemeFrameReadinessPolicy.isReady(pixels: darkSamples, target: dark),
+       "a frame whose background margins match the theme should be ready")
+expect(!ThemeFrameReadinessPolicy.isReady(pixels: staleSamples, target: dark),
+       "a fully stale frame must not be ready")
+expect(ThemeFrameReadinessPolicy.shouldContinueWaiting(
+    didCapture: true,
+    pixels: darkSamples,
+    target: dark,
+    elapsed: 0,
+    matchingStableCount: 1
+), "the first matching frame must wait for a second stable commit")
+expect(!ThemeFrameReadinessPolicy.shouldContinueWaiting(
+    didCapture: true,
+    pixels: darkSamples,
+    target: dark,
+    elapsed: 0,
+    matchingStableCount: 2
+), "the second consecutive matching frame may reveal")
+expect(ThemeFrameReadinessPolicy.shouldContinueWaiting(
+    didCapture: true,
+    pixels: staleSamples,
+    target: dark,
+    elapsed: 0,
+    matchingStableCount: 0
+), "stale frames must keep waiting")
+
 print("PASS")
