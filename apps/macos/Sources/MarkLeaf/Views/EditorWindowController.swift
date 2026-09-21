@@ -53,6 +53,15 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     private var windowTitleTransitionView: WindowTitleTransitionView?
     private var isTitleStatusMarkerVisible: Bool?
 
+    func applySurfaceBackground(_ color: NSColor) {
+        rightColumnView?.wantsLayer = true
+        rightColumnView?.layer?.backgroundColor = color.cgColor
+        splitView?.wantsLayer = true
+        splitView?.layer?.backgroundColor = color.cgColor
+        outerSplitView?.wantsLayer = true
+        outerSplitView?.layer?.backgroundColor = color.cgColor
+    }
+
     private(set) var isFocusMode = false
     private var allowsNextClose = false
     private var pendingCloseAfterSheetEnds = false
@@ -1098,11 +1107,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         splitView.isVertical = true
         splitView.dividerStyle = .thin
         splitView.delegate = self
+        splitView.wantsLayer = true
 
         let outerSplitView = NSSplitView()
         outerSplitView.isVertical = true
         outerSplitView.dividerStyle = .thin
         outerSplitView.delegate = self
+        outerSplitView.wantsLayer = true
 
         // 主窗口原生表面统一经过玻璃适配器；旧系统与减少透明度场景自动回退。
         let sidebarContainer = GlassSurfaceView(style: .sidebar)
@@ -1121,6 +1132,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         // 右栏：编辑器 + 状态栏
         let rightColumn = NSView()
         self.rightColumnView = rightColumn
+        rightColumn.wantsLayer = true
+        rightColumn.layer?.backgroundColor = (session.themeBackgroundColor ?? .windowBackgroundColor).cgColor
         let titleBarGlassSurface = GlassSurfaceView(style: .regular)
         self.titleBarGlassSurface = titleBarGlassSurface
         titleBarGlassSurface.translatesAutoresizingMaskIntoConstraints = false
@@ -1934,7 +1947,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
            splitView.arrangedSubviews.count == 2 {
             let width = splitView.arrangedSubviews[0].frame.width
             if width >= SidebarLayout.minimumWidth {
-                SettingsService.shared.update { $0.workspaceWidth = Int(width) }
+                SettingsService.shared.update(
+                    { $0.workspaceWidth = Int(width) },
+                    broadcasting: false
+                )
             }
         }
         if session.outlineDetached,
@@ -1942,7 +1958,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
            outerSplitView.arrangedSubviews.count == 2 {
             let width = outerSplitView.arrangedSubviews[1].frame.width
             if width >= SidebarLayout.minimumWidth {
-                SettingsService.shared.update { $0.outlineWidth = Int(width) }
+                SettingsService.shared.update(
+                    { $0.outlineWidth = Int(width) },
+                    broadcasting: false
+                )
             }
         }
     }

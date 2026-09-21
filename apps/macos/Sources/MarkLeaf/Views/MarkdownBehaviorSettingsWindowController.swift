@@ -6,6 +6,8 @@ final class MarkdownBehaviorSettingsWindowController: NSWindowController {
         checkboxWithTitle: L10n.t("转义文本中的 Markdown 符号"), target: nil, action: nil)
     private let escapeMarkdownLiteralSymbolsCheck = NSButton(
         checkboxWithTitle: L10n.t("转义 Markdown 字面量符号"), target: nil, action: nil)
+    private let codeBlockSpellcheckCheck = NSButton(
+        checkboxWithTitle: L10n.t("代码块拼写检查"), target: nil, action: nil)
     private let exitBlockOnEmptyEnterCheck = NSButton(
         checkboxWithTitle: L10n.t("空行回车退出块"), target: nil, action: nil)
     private let useShiftEnterHardBreakCheck = NSButton(
@@ -59,12 +61,16 @@ final class MarkdownBehaviorSettingsWindowController: NSWindowController {
         for popup in [codeFencePopup, emphasisMarkerPopup, bulletMarkerPopup] {
             popup.widthAnchor.constraint(equalToConstant: popupWidth).isActive = true
         }
+        for rowIndex in 0..<form.numberOfRows {
+            form.row(at: rowIndex).yPlacement = .center
+        }
 
         checkboxStack.orientation = .vertical
         checkboxStack.alignment = .leading
         checkboxStack.spacing = 12
         checkboxStack.addArrangedSubview(escapeLiteralSymbolsCheck)
         checkboxStack.addArrangedSubview(escapeMarkdownLiteralSymbolsCheck)
+        checkboxStack.addArrangedSubview(codeBlockSpellcheckCheck)
         checkboxStack.addArrangedSubview(exitBlockOnEmptyEnterCheck)
         checkboxStack.addArrangedSubview(useShiftEnterHardBreakCheck)
         checkboxStack.translatesAutoresizingMaskIntoConstraints = false
@@ -109,6 +115,7 @@ final class MarkdownBehaviorSettingsWindowController: NSWindowController {
     private func syncControls() {
         escapeLiteralSymbolsCheck.state = model.escapeLiteralSymbols ? .on : .off
         escapeMarkdownLiteralSymbolsCheck.state = model.escapeMarkdownLiteralSymbols ? .on : .off
+        codeBlockSpellcheckCheck.state = model.codeBlockSpellcheck ? .on : .off
         exitBlockOnEmptyEnterCheck.state = model.exitBlockOnEmptyEnter ? .on : .off
         useShiftEnterHardBreakCheck.state = model.useShiftEnterHardBreak ? .on : .off
         codeFencePopup.selectItem(at: model.markdownCodeFenceIsTilde ? 1 : 0)
@@ -119,6 +126,7 @@ final class MarkdownBehaviorSettingsWindowController: NSWindowController {
     private func syncModel() {
         model.escapeLiteralSymbols = escapeLiteralSymbolsCheck.state == .on
         model.escapeMarkdownLiteralSymbols = escapeMarkdownLiteralSymbolsCheck.state == .on
+        model.codeBlockSpellcheck = codeBlockSpellcheckCheck.state == .on
         model.exitBlockOnEmptyEnter = exitBlockOnEmptyEnterCheck.state == .on
         model.useShiftEnterHardBreak = useShiftEnterHardBreakCheck.state == .on
         model.markdownCodeFenceIsTilde = codeFencePopup.indexOfSelectedItem == 1

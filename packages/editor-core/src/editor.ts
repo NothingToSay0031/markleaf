@@ -945,6 +945,35 @@ const EmptyBlockEnter = Extension.create({
   },
 })
 
+// macOS inherited spell checking from the editable document root. Code fences
+// are usually identifiers and commands, so the host opt-in controls node
+// decorations instead of permanently changing the code block schema.
+const CodeBlockSpellcheck = Extension.create({
+  name: 'markleafCodeBlockSpellcheck',
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      props: {
+        decorations(state) {
+          if (codeBlockSpellcheck) return DecorationSet.empty
+
+          const decorations: Decoration[] = []
+          state.doc.descendants((node, position) => {
+            if (node.type.name !== 'codeBlock') return
+            decorations.push(Decoration.node(
+              position,
+              position + node.nodeSize,
+              { spellcheck: 'false' },
+            ))
+          })
+          return decorations.length > 0
+            ? DecorationSet.create(state.doc, decorations)
+            : DecorationSet.empty
+        },
+      },
+    })]
+  },
+})
+
 /// 可视化编辑器中的 Tab：列表项执行结构化缩进，普通文本块插入两个空格。
 /// 表格仍交给表格扩展处理，以保留单元格间跳转行为。
 const VisualIndent = Extension.create({
@@ -955,6 +984,14 @@ const VisualIndent = Extension.create({
         if (!this.editor.isEditable) return false
         if (getListItemTypeAtSelection(this.editor)) return indentListItem(this.editor)
         const { $from } = this.editor.state.selection
+        if ($from.parent.type.name === 'codeBlock') {
+          const lineStartOffset = $from.parent.textContent.lastIndexOf('\n', $from.parentOffset - 1) + 1
+          const lineStart = $from.start($from.depth) + lineStartOffset
+          return this.editor.chain()
+            .focus()
+            .insertContentAt({ from: lineStart, to: lineStart }, VISUAL_INDENT)
+            .run()
+        }
         for (let depth = $from.depth; depth > 0; depth -= 1) {
           const nodeName = $from.node(depth).type.name
           if (nodeName === 'table' || nodeName === 'tableRow'
@@ -980,6 +1017,16 @@ const VisualIndent = Extension.create({
         if (!this.editor.isEditable) return false
         if (getListItemTypeAtSelection(this.editor)) return outdentListItem(this.editor)
         const { $from } = this.editor.state.selection
+        if ($from.parent.type.name === 'codeBlock') {
+          const lineStartOffset = $from.parent.textContent.lastIndexOf('\n', $from.parentOffset - 1) + 1
+          const lineStart = $from.start($from.depth) + lineStartOffset
+          const removable = $from.parent.textContent.slice(lineStartOffset, lineStartOffset + VISUAL_INDENT.length)
+          if (removable !== VISUAL_INDENT) return false
+          return this.editor.chain()
+            .focus()
+            .deleteRange({ from: lineStart, to: lineStart + VISUAL_INDENT.length })
+            .run()
+        }
         for (let depth = $from.depth; depth > 0; depth -= 1) {
           const nodeName = $from.node(depth).type.name
           if (nodeName === 'table' || nodeName === 'tableRow'
@@ -3377,6 +3424,7 @@ const editorExtensions = [
   TableCell,
   FootnoteDefinitionDecorations,
   Caption,
+  CodeBlockSpellcheck,
   CodeBlockControls,
   MermaidCodeBlockControls,
   CodeBlockHighlight,
@@ -3900,6 +3948,7 @@ let markdownEmphasisMarker: 'asterisk' | 'underscore' = 'asterisk'
 let markdownBulletMarker: 'dash' | 'asterisk' | 'plus' = 'dash'
 let escapeLiteralSymbols = false
 let escapeMarkdownLiteralSymbols = true
+let codeBlockSpellcheck = false
 
 export function setAutoConvertUnsafeEmphasis(enabled: boolean): void {
   autoConvertUnsafeEmphasis = enabled
@@ -3913,6 +3962,7 @@ export type MarkdownEditingSettings = {
   bulletMarker?: 'dash' | 'asterisk' | 'plus'
   escapeLiteralSymbols?: boolean
   escapeMarkdownLiteralSymbols?: boolean
+  codeBlockSpellcheck?: boolean
 }
 
 export function setMarkdownEditingSettings(settings: MarkdownEditingSettings): void {
@@ -3926,6 +3976,7 @@ export function setMarkdownEditingSettings(settings: MarkdownEditingSettings): v
     : settings.bulletMarker === 'plus' ? 'plus' : 'dash'
   escapeLiteralSymbols = settings.escapeLiteralSymbols === true
   escapeMarkdownLiteralSymbols = settings.escapeMarkdownLiteralSymbols !== false
+  codeBlockSpellcheck = settings.codeBlockSpellcheck === true
 }
 
 function getVisualCursorLineNumber(editor: Editor): number {

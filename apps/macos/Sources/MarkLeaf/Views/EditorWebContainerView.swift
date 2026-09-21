@@ -201,6 +201,11 @@ final class EditorWebContainerView: NSView, WKNavigationDelegate {
         // 主题 CSS 生效前的兜底底色，避免任何早揭示路径闪白。
         let initialDark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         editorWebView.underPageBackgroundColor = initialDark ? .black : .white
+        // WKWebView's internal scroll view can briefly expose its default white
+        // backing while its viewport is resized (notably during sidebar collapse).
+        // Keep that backing transparent so the themed editor surface remains the
+        // only color visible during the resize transaction.
+        editorWebView.setValue(false, forKey: "drawsBackground")
         webView = editorWebView
         super.init(frame: .zero)
 
@@ -277,6 +282,7 @@ final class EditorWebContainerView: NSView, WKNavigationDelegate {
         // 对齐 Windows 1.1.3：页面背景与宿主容器使用主题 --bg-primary，减少加载期明暗跳变。
         if let background = session?.themeBackgroundColor {
             webView.underPageBackgroundColor = background
+            webView.setValue(false, forKey: "drawsBackground")
             wantsLayer = true
             layer?.backgroundColor = background.cgColor
         }

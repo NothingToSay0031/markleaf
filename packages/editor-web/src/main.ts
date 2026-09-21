@@ -1508,6 +1508,9 @@ async function handleMessage(value: unknown): Promise<void> {
           catch {
             setMarkdownEditingSettings({})
           }
+          // Spell-check decorations are view state, so refresh them after the
+          // preference value changes without creating an undoable document step.
+          editor.view.dispatch(editor.state.tr.setMeta('addToHistory', false))
           if (message.requestId) send('commandResult', { success: true }, message.requestId)
           break
         }

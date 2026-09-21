@@ -526,7 +526,10 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
                 return OutlineHeading(level: level, text: text, position: position)
             }
             if startupRecoveryNotice(for: message) == nil {
-                statusText = L10n.f("大纲 %d 项", outlineHeadings.count)
+                let outlineStatus = L10n.f("大纲 %d 项", outlineHeadings.count)
+                if StatusBarStatusUpdatePolicy.shouldReplace(current: statusText, incoming: outlineStatus) {
+                    statusText = outlineStatus
+                }
             }
             onOutlineChanged?()
 
@@ -865,7 +868,7 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
         var settings = SettingsService.shared.settings
         settings.clampSettingRanges()
         execute("setMarkdownEditingSettings", text: """
-        {"exitBlockOnEmptyEnter":\(settings.exitBlockOnEmptyEnter ? "true" : "false"),"useShiftEnterHardBreak":\(settings.useShiftEnterHardBreak ? "true" : "false"),"codeFence":"\(settings.markdownCodeFence)","emphasisMarker":"\(settings.markdownEmphasisMarker)","bulletMarker":"\(settings.markdownBulletMarker)","escapeLiteralSymbols":\(settings.escapeLiteralSymbols ? "true" : "false"),"escapeMarkdownLiteralSymbols":\(settings.escapeMarkdownLiteralSymbols ? "true" : "false")}
+        {"exitBlockOnEmptyEnter":\(settings.exitBlockOnEmptyEnter ? "true" : "false"),"useShiftEnterHardBreak":\(settings.useShiftEnterHardBreak ? "true" : "false"),"codeFence":"\(settings.markdownCodeFence)","emphasisMarker":"\(settings.markdownEmphasisMarker)","bulletMarker":"\(settings.markdownBulletMarker)","escapeLiteralSymbols":\(settings.escapeLiteralSymbols ? "true" : "false"),"escapeMarkdownLiteralSymbols":\(settings.escapeMarkdownLiteralSymbols ? "true" : "false"),"codeBlockSpellcheck":\(settings.codeBlockSpellcheck ? "true" : "false")}
         """)
     }
 
@@ -1453,15 +1456,26 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             let dark = theme.isDark
-            if self.isFollowSystemTheme {
-                NSApp.appearance = nil
+            let appearanceName = AppAppearancePolicy.appearanceName(
+                themeIsDark: dark,
+                followsSystem: self.isFollowSystemTheme
+            )
+            if let appearanceName {
+                NSApp.appearance = NSAppearance(named: appearanceName)
             } else {
-                NSApp.appearance = dark ? NSAppearance(named: .darkAqua) : nil
+                NSApp.appearance = nil
             }
             if let window = self.webView?.window {
                 window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
                 window.backgroundColor = self.themeBackgroundColor ?? .windowBackgroundColor
                 window.isOpaque = true
+            }
+            // During an NSSplitView resize, a one-frame gap can expose the
+            // native column backing before WKWebView repaints. Keep both the
+            // editor column and split surfaces on the same theme color.
+            if let controller = self.webView?.window?.windowController as? EditorWindowController,
+               let background = self.themeBackgroundColor {
+                controller.applySurfaceBackground(background)
             }
             // AppKit propagates appearance changes on the next layout pass.
             // Refreshing synchronously samples the previous effective
@@ -2063,7 +2077,13 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
 
     func toggleSidebar() {
         sidebarVisible.toggle()
-        SettingsService.shared.update { $0.sidebarVisible = sidebarVisible }
+        // Visibility changes already drive this window's animation callback.
+        // Broadcasting here would run every window's full preference pass during
+        // the split-view transition and can expose an unpainted layout frame.
+        SettingsService.shared.update(
+            { $0.sidebarVisible = sidebarVisible },
+            broadcasting: false
+        )
         onViewStateChanged?()
     }
 

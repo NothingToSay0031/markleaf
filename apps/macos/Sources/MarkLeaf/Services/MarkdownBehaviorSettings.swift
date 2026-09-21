@@ -3,6 +3,7 @@ import Foundation
 struct MarkdownBehaviorSettingsModel {
     var escapeLiteralSymbols: Bool
     var escapeMarkdownLiteralSymbols: Bool
+    var codeBlockSpellcheck: Bool
     var exitBlockOnEmptyEnter: Bool
     var useShiftEnterHardBreak: Bool
     var markdownCodeFenceIsTilde: Bool
@@ -12,6 +13,7 @@ struct MarkdownBehaviorSettingsModel {
     init(settings: AppSettings) {
         escapeLiteralSymbols = settings.escapeLiteralSymbols
         escapeMarkdownLiteralSymbols = settings.escapeMarkdownLiteralSymbols
+        codeBlockSpellcheck = settings.codeBlockSpellcheck
         exitBlockOnEmptyEnter = settings.exitBlockOnEmptyEnter
         useShiftEnterHardBreak = settings.useShiftEnterHardBreak
         markdownCodeFenceIsTilde = settings.markdownCodeFence == "tilde"
@@ -22,6 +24,7 @@ struct MarkdownBehaviorSettingsModel {
     func apply(to settings: inout AppSettings) {
         settings.escapeLiteralSymbols = escapeLiteralSymbols
         settings.escapeMarkdownLiteralSymbols = escapeMarkdownLiteralSymbols
+        settings.codeBlockSpellcheck = codeBlockSpellcheck
         settings.exitBlockOnEmptyEnter = exitBlockOnEmptyEnter
         settings.useShiftEnterHardBreak = useShiftEnterHardBreak
         settings.markdownCodeFence = markdownCodeFenceIsTilde ? "tilde" : "backtick"

@@ -20,6 +20,40 @@ afterEach(() => {
 })
 
 describe('shared editing interactions', () => {
+  it('inserts and removes the visual indent inside code blocks with Tab', () => {
+    const { editor } = setup('```js\nconst value = 1\n```')
+    const codeBlock = editor.state.doc.firstChild!
+    expect(codeBlock.type.name).toBe('codeBlock')
+    editor.commands.setTextSelection({ from: 2, to: 2 })
+
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    editor.view.dom.dispatchEvent(tab)
+    expect(tab.defaultPrevented).toBe(true)
+    expect(getMarkdown(editor)).toContain('```js\n  const value = 1')
+
+    const shiftTab = new KeyboardEvent('keydown', {
+      key: 'Tab', shiftKey: true, bubbles: true, cancelable: true,
+    })
+    editor.view.dom.dispatchEvent(shiftTab)
+    expect(shiftTab.defaultPrevented).toBe(true)
+    expect(getMarkdown(editor)).toContain('```js\nconst value = 1')
+  })
+
+  it('controls code block spell checking through editing preferences', () => {
+    setMarkdownEditingSettings({ codeBlockSpellcheck: false })
+    const { editor } = setup('```js\nconst value = 1\n```')
+    const codeBlock = editor.view.dom.querySelector('pre')!
+    expect(codeBlock.getAttribute('spellcheck')).toBe('false')
+
+    setMarkdownEditingSettings({ codeBlockSpellcheck: true })
+    editor.view.dispatch(editor.state.tr.setMeta('addToHistory', false))
+    expect(codeBlock.getAttribute('spellcheck')).toBeNull()
+
+    setMarkdownEditingSettings({ codeBlockSpellcheck: false })
+    editor.view.dispatch(editor.state.tr.setMeta('addToHistory', false))
+    expect(codeBlock.getAttribute('spellcheck')).toBe('false')
+  })
+
   it('applies format painter once from an actual DOM selection and cancels during composition', async () => {
     const { editor, mount } = setup('**source**\n\ntarget')
     const interactions = createEditorInteractions({ mount, getEditor: () => editor, enabled: () => editor.isEditable, onMenu: vi.fn(), label: 'Block menu' })

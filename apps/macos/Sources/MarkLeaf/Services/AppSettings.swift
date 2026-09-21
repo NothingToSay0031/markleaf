@@ -118,6 +118,7 @@ struct AppSettings: Codable {
         useShiftEnterHardBreak = try container.decodeIfPresent(Bool.self, forKey: .useShiftEnterHardBreak) ?? true
         escapeLiteralSymbols = try container.decodeIfPresent(Bool.self, forKey: .escapeLiteralSymbols) ?? false
         escapeMarkdownLiteralSymbols = try container.decodeIfPresent(Bool.self, forKey: .escapeMarkdownLiteralSymbols) ?? false
+        codeBlockSpellcheck = try container.decodeIfPresent(Bool.self, forKey: .codeBlockSpellcheck) ?? false
         markdownCodeFence = try container.decodeIfPresent(String.self, forKey: .markdownCodeFence) ?? "backtick"
         markdownEmphasisMarker = try container.decodeIfPresent(String.self, forKey: .markdownEmphasisMarker) ?? "asterisk"
         markdownBulletMarker = try container.decodeIfPresent(String.self, forKey: .markdownBulletMarker) ?? "dash"
@@ -220,6 +221,7 @@ struct AppSettings: Codable {
     var useShiftEnterHardBreak = true
     var escapeLiteralSymbols = false
     var escapeMarkdownLiteralSymbols = false
+    var codeBlockSpellcheck = false
     var markdownCodeFence = "backtick"
     var markdownEmphasisMarker = "asterisk"
     var markdownBulletMarker = "dash"
@@ -359,7 +361,7 @@ final class SettingsService {
         }
     }
 
-    func save() {
+    func save(broadcasting: Bool = true) {
         settings.normalizeThemeIDs()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -376,16 +378,18 @@ final class SettingsService {
         } catch {
             AppLog.error("设置保存失败: \(error.localizedDescription)")
         }
-        onChange?()
+        if broadcasting {
+            onChange?()
+        }
     }
 
     // MARK: - 便捷访问
 
-    func update(_ mutate: (inout AppSettings) -> Void) {
+    func update(_ mutate: (inout AppSettings) -> Void, broadcasting: Bool = true) {
         var updated = settings
         mutate(&updated)
         settings = updated
-        save()
+        save(broadcasting: broadcasting)
     }
 
     func addRecentFile(_ path: String) {
