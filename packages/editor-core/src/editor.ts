@@ -155,15 +155,14 @@ function buildCjkAutoSpacingDecorations(doc: any): DecorationSet {
         const current = text[index]!
         if (!((isCjk(previous) && isLatinOrNumber(current))
           || (isLatinOrNumber(previous) && isCjk(current)))) continue
-        decorations.push(Decoration.widget(
+        // A zero-width widget inserts a real node into the text flow. WebKit
+        // can anchor a drag selection before that node and paint the previous
+        // phrase until mouseup. Space the first character on the right instead;
+        // an inline decoration does not add a separately selectable node.
+        decorations.push(Decoration.inline(
           position + index,
-          () => {
-            const spacer = document.createElement('span')
-            spacer.className = 'markleaf-cjk-autospace-widget'
-            spacer.setAttribute('aria-hidden', 'true')
-            return spacer
-          },
-          { side: 0, ignoreSelection: true, key: `cjk-space-${position + index}` },
+          position + index + 1,
+          { class: 'markleaf-cjk-autospace-space' },
         ))
       }
       return

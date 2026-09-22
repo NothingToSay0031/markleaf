@@ -127,6 +127,31 @@ setCodeBlockControlHandlers({
   copyCode: text => send('copyCodeBlockRequested', { text }),
 })
 let contextMenuSelection: { from: number; to: number } | null = null
+let selectionBeforeContextMenu: { from: number; to: number } | null = null
+
+// WebKit collapses an existing selection to the clicked word during a
+// right-button mousedown. Capture the selection before that default action so
+// a right click inside the selection can still operate on the whole range.
+document.addEventListener('mousedown', (event) => {
+  if (!editorMount.contains(event.target as Node)) return
+  // A left click starts a new selection context. Keep the last non-empty
+  // selection only for right-click preservation.
+  if (event.button === 0) {
+    selectionBeforeContextMenu = null
+    return
+  }
+  if (event.button === 2) {
+    const selection = editor.state.selection
+    if (!selection.empty) {
+      selectionBeforeContextMenu = { from: selection.from, to: selection.to }
+      // WebKit uses mousedown to shrink a selection to the clicked word. Let
+      // contextmenu still fire, but keep ProseMirror from seeing the press so
+      // the selected range stays at its source.
+      event.preventDefault()
+      event.stopPropagation()
+    }
+  }
+}, { capture: true })
 let lastVisualSelection = captureVisualSelection(editor)
 const readingBehavior = createReadingBehavior(() => editor)
 const scrollEditorCursorToCenter = readingBehavior.cursorMoved
@@ -1095,7 +1120,20 @@ editorMount.addEventListener('contextmenu', (event) => {
     })
     return
   }
-  selectEditorContextAt(editor, { left: event.clientX, top: event.clientY })
+  const resolved = editor.view.posAtCoords({ left: event.clientX, top: event.clientY })
+  const previousSelection = selectionBeforeContextMenu
+  const shouldPreserveSelection = Boolean(
+    previousSelection
+    && resolved
+    && resolved.pos >= previousSelection.from
+    && resolved.pos <= previousSelection.to,
+  )
+  if (shouldPreserveSelection && previousSelection) {
+    editor.commands.setTextSelection(previousSelection)
+  } else {
+    selectEditorContextAt(editor, { left: event.clientX, top: event.clientY })
+  }
+  selectionBeforeContextMenu = null
   editor.commands.focus()
   contextMenuSelection = {
     from: editor.state.selection.from,

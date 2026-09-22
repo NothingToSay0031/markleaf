@@ -49,22 +49,11 @@ body,
   text-autospace: no-autospace;
 }
 
-.markleaf-cjk-autospace-widget {
-  display: inline-block;
-  width: 0.35em;
-  min-width: 0.35em;
-  height: 1px;
-  overflow: hidden;
-  vertical-align: baseline;
-  pointer-events: none;
-}
-
-#editor .markleaf-cjk-autospace-widget {
-  display: none;
-}
-
-.markleaf-cjk-autospace #editor .markleaf-cjk-autospace-widget {
-  display: inline-block;
+/* Keep spacing on a character decoration. A separate zero-width node gives
+   WebKit an extra selection anchor and can briefly highlight text before the
+   user's drag start. */
+.markleaf-cjk-autospace #editor .markleaf-cjk-autospace-space {
+  padding-left: 0.35em;
 }
 
 /* Markdown 表情别名保留在文档中，仅在可视化编辑器里替换为表情显示。 */

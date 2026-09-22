@@ -9,6 +9,40 @@ final class EditorWebView: WKWebView {
     private var autoscrollEvent: NSEvent?
     private var isHandlingSyntheticDrag = false
 
+    override func rightMouseDown(with event: NSEvent) {
+        // WebKit's native right-button handling can collapse a drag selection
+        // before DOM listeners observe mousedown. Route visual-editor right
+        // clicks through the existing trusted contextmenu handler instead.
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        let clientX = viewPoint.x
+        let clientY = isFlipped ? viewPoint.y : bounds.height - viewPoint.y
+        let dispatch = """
+        ((x, y) => {
+          const editor = document.querySelector('#editor');
+          const target = document.elementFromPoint(x, y);
+          if (!editor || !target || !editor.contains(target)) return false;
+          target.dispatchEvent(new MouseEvent('contextmenu', {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            button: 2,
+            buttons: 0,
+            clientX: x,
+            clientY: y,
+          }));
+          return true;
+        })(\(clientX), \(clientY))
+        """
+        evaluateJavaScript(dispatch) { [weak self] handled, _ in
+            guard let self, handled as? Bool != true else { return }
+            self.superRightMouseDown(event)
+        }
+    }
+
+    private func superRightMouseDown(_ event: NSEvent) {
+        super.rightMouseDown(with: event)
+    }
+
     override func magnify(with event: NSEvent) {
         // 触控板捏合：AppKit 的 magnification 为缩放因子增量，放大为正。
         // 统一映射到 handleZoomWheel 的连续缩放路径。
