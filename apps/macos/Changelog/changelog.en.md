@@ -1,5 +1,39 @@
 # MarkLeaf Changelog
 
+## 1.7.7 — 2026-09-22
+
+### Added
+
+- Added a Quick Look preview extension for Markdown, Markdown variants, and plain-text files in Finder.
+- Added Read-only mode, which blocks editing in visual and source modes.
+- Added stable reading anchors, so reading positions are more reliable after edits, mode changes, or reopening documents.
+- Added `Tab` / `Shift+Tab` indent and outdent support in code blocks.
+- Added a Code Block Spell Check option to Markdown behavior settings, disabled by default.
+- Added confirmation prompts before destructive actions such as Clear History.
+
+### Changed
+
+- Further adapted Liquid Glass for macOS 26/27 across the title bar, sidebar, tab bar, status bar, and selected floating windows.
+- Refined the editor tab bar appearance, with a clearer capsule style for the selected tab.
+- Unified scrollbar widths and overlay styling across the sidebar, floating windows, and editor.
+- Improved copy semantics, so selection exports preserve task lists, footnote references, and footnote definitions more completely.
+- Source mode now supports chapter detection and chapter navigation.
+- Improved drag-selection highlight performance for long documents and large selections.
+- Regrouped editor options in Preferences for a tidier layout.
+
+### Fixed
+
+- Fixed an occasional white flash in the editor when creating a tab.
+- Fixed delayed color updates for the title bar, sidebar, status bar, and some controls on first launch or when switching light and dark modes.
+- Fixed some Liquid Glass controls retaining their old appearance after switching from dark to light mode.
+- Fixed the overflow menu arrow becoming unclickable when there are many tabs.
+- Fixed outline status text such as “Outline 0 items” disappearing or flickering after hiding and showing the sidebar.
+- Fixed Markdown and plain-text files dragged from Finder not opening.
+- Fixed unstable highlights, whole-line false highlights, or selections that could not be cleared during long-document drags, Shift+arrow selection, or autoscroll near window edges.
+- Fixed inaccurate heading and paragraph positioning, improving reading-position restoration.
+- Fixed right-clicking inside a drag selection collapsing it to the clicked position.
+- Fixed a brief false highlight of preceding text when dragging across boundaries with CJK and Western auto-spacing enabled.
+
 ## 1.7.6 — 2026-09-12
 
 ### Added
