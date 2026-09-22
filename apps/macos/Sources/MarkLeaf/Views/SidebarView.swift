@@ -1,19 +1,5 @@
 import AppKit
 
-/// The search icon is drawn beside a plain text field instead of relying on
-/// NSSearchFieldCell. This keeps placeholder text, entered text and the caret
-/// on one stable geometry across AppKit's non-editing and editing paths.
-final class SidebarSearchIconView: NSImageView {
-    weak var focusTarget: NSTextField?
-
-    override func mouseDown(with event: NSEvent) {
-        if let focusTarget {
-            focusTarget.window?.makeFirstResponder(focusTarget)
-        }
-        super.mouseDown(with: event)
-    }
-}
-
 /// A compact AppKit overlay knob that deliberately does not draw the legacy
 /// full-height scroller slot. This keeps native sidebar scrolling visually
 /// closer to the WKWebView editor's overlay indicator.
@@ -27,8 +13,6 @@ final class SidebarView: NSView {
 
     let tabControl: NSSegmentedControl
     let headerOpenFolderButton = NSButton()
-    private let workspaceTabButton = NSButton()
-    private let outlineTabButton = NSButton()
     let emptyStateLabel: NSTextField
     let emptyStateOpenFolderButton: NSButton
     let emptyStateView: NSStackView
@@ -37,115 +21,21 @@ final class SidebarView: NSView {
     private let outlineTree = OutlineTreeView()
     private let workspaceScroll = NSScrollView()
     private let outlineScroll = NSScrollView()
-    private let searchField = NSTextField()
-    private let searchIcon = SidebarSearchIconView()
+    private let searchField = NSSearchField()
     private let searchScroll = NSScrollView()
     private let searchResults = WorkspaceSearchResultsView()
     private let searchService = WorkspaceSearchService()
     private var isSearching = false
     private var tabTransitionGeneration = 0
-    private weak var newFileGlass: GlassSurfaceView?
-    private weak var searchGlass: GlassSurfaceView?
-    private let selectionPill = NSView()
-    private weak var segmentedContentView: NSView?
-    private var workspaceSelectionConstraints: [NSLayoutConstraint] = []
-    private var outlineSelectionConstraints: [NSLayoutConstraint] = []
-
-    private func makeGlassControl(
-        _ control: NSView,
-        cornerRadius: CGFloat,
-        interactive: Bool = false
-    ) -> GlassSurfaceView {
-        let surface = GlassSurfaceView(
-            style: interactive ? .interactive : .regular,
-            preferredDark: session.currentThemeIsDark,
-            fallbackBackgroundColor: .windowBackgroundColor
-        )
-        surface.cornerRadiusOverride = cornerRadius
-        surface.embedsContentInGlass = false
-        surface.setContent(control)
-        surface.layer?.cornerRadius = cornerRadius
-        surface.layer?.borderWidth = 0.5
-        surface.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.32).cgColor
-        return surface
-    }
-
-    private func configureSidebarSegmentedButtons() {
-        for (button, index, action) in [
-            (workspaceTabButton, 0, #selector(workspaceTabClicked)),
-            (outlineTabButton, 1, #selector(outlineTabClicked)),
-        ] {
-            button.title = localize(index == 0 ? "工作区" : "大纲")
-            button.isBordered = false
-            button.controlSize = .regular
-            button.font = .systemFont(ofSize: 13)
-            button.target = self
-            button.action = action
-            button.translatesAutoresizingMaskIntoConstraints = false
-            button.wantsLayer = true
-            button.layer?.cornerRadius = 8
-            button.heightAnchor.constraint(equalToConstant: 22).isActive = true
-        }
-    }
-
-    private func updateSegmentedButtonSelection() {
-        let selected = tabControl.selectedSegment
-        let buttons = [workspaceTabButton, outlineTabButton]
-        for (index, button) in buttons.enumerated() {
-            let isSelected = index == selected
-            button.font = .systemFont(ofSize: 13, weight: isSelected ? .semibold : .regular)
-            button.contentTintColor = isSelected ? .labelColor : .secondaryLabelColor
-            button.layer?.backgroundColor = isSelected
-                ? NSColor.controlAccentColor.withAlphaComponent(0.24).cgColor
-                : NSColor.clear.cgColor
-            button.isEnabled = index != 1 || !session.outlineDetached
-        }
-    }
-
-    private func updateSelectionPill(animated: Bool) {
-        let target = tabControl.selectedSegment == 0
-            ? workspaceSelectionConstraints
-            : outlineSelectionConstraints
-        let previous = tabControl.selectedSegment == 0
-            ? outlineSelectionConstraints
-            : workspaceSelectionConstraints
-        guard target != previous else { return }
-
-        let applyChanges = {
-            previous.forEach { $0.isActive = false }
-            target.forEach { $0.isActive = true }
-            self.segmentedContentView?.layoutSubtreeIfNeeded()
-        }
-        guard animated, window != nil else {
-            applyChanges()
-            return
-        }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.16
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            context.allowsImplicitAnimation = true
-            applyChanges()
-        }
-    }
-
     private func updateSearchAvailability() {
         let isEnabled = searchField.isEnabled
         let targetAlpha: CGFloat = isEnabled ? 1.0 : 0.38
-        searchGlass?.animator().alphaValue = targetAlpha
+        searchField.animator().alphaValue = targetAlpha
         searchField.textColor = isEnabled ? .labelColor : .secondaryLabelColor.withAlphaComponent(0.55)
     }
 
-    @objc private func workspaceTabClicked() {
-        selectTab(0)
-    }
-
-    @objc private func outlineTabClicked() {
-        guard !session.outlineDetached else { return }
-        selectTab(1)
-    }
-
     /// Exposes the native search field to @testable layout regression tests.
-    var searchFieldForTesting: NSTextField { searchField }
+    var searchFieldForTesting: NSSearchField { searchField }
 
     init(
         session: EditorSession,
@@ -177,7 +67,8 @@ final class SidebarView: NSView {
         tabControl.selectedSegment = 0
         tabControl.controlSize = .regular
         tabControl.font = .systemFont(ofSize: 13)
-        tabControl.selectedSegmentBezelColor = .clear
+        tabControl.segmentStyle = .automatic
+        tabControl.translatesAutoresizingMaskIntoConstraints = false
         tabControl.target = self
         tabControl.action = #selector(tabChanged)
 
@@ -187,110 +78,50 @@ final class SidebarView: NSView {
         )
         headerOpenFolderButton.title = ""
         headerOpenFolderButton.imagePosition = .imageOnly
-        headerOpenFolderButton.isBordered = false
+        headerOpenFolderButton.isBordered = true
+        if #available(macOS 26.0, *) {
+            headerOpenFolderButton.bezelStyle = .glass
+        } else {
+            headerOpenFolderButton.bezelStyle = .toolbar
+        }
         headerOpenFolderButton.contentTintColor = .labelColor
         headerOpenFolderButton.controlSize = .regular
         headerOpenFolderButton.target = self
         headerOpenFolderButton.action = #selector(newMarkdownFileFromHeader)
-        headerOpenFolderButton.widthAnchor.constraint(equalToConstant: 28).isActive = true
-        headerOpenFolderButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        headerOpenFolderButton.translatesAutoresizingMaskIntoConstraints = false
 
         searchField.translatesAutoresizingMaskIntoConstraints = false
         searchField.isEditable = true
         searchField.isSelectable = true
-        searchField.isBordered = false
-        searchField.drawsBackground = false
+        searchField.controlSize = .regular
+        searchField.sendsSearchStringImmediately = true
         searchField.focusRingType = .none
-        searchField.font = .systemFont(ofSize: NSFont.systemFontSize)
-        searchField.usesSingleLineMode = true
-        searchField.lineBreakMode = .byTruncatingTail
         searchField.target = self
         searchField.action = #selector(searchChanged(_:))
-        searchField.delegate = self
-        searchField.heightAnchor.constraint(equalToConstant: 20).isActive = true
+        searchField.heightAnchor.constraint(equalToConstant: 28).isActive = true
         searchField.widthAnchor.constraint(greaterThanOrEqualToConstant: 72).isActive = true
         searchField.setAccessibilityLabel(localize("搜索"))
-
-        searchIcon.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
-        searchIcon.contentTintColor = .secondaryLabelColor
-        searchIcon.focusTarget = searchField
-        searchIcon.translatesAutoresizingMaskIntoConstraints = false
-        searchIcon.widthAnchor.constraint(equalToConstant: 16).isActive = true
-        searchIcon.heightAnchor.constraint(equalToConstant: 16).isActive = true
-
-        // Keep Finder's glass language inside the sidebar: independent control
-        // capsules, with explicit rows so localized labels never compete for width.
-        configureSidebarSegmentedButtons()
-        let segmentedContent = NSView()
-        segmentedContent.addSubview(selectionPill)
-        segmentedContent.addSubview(workspaceTabButton)
-        segmentedContent.addSubview(outlineTabButton)
-        segmentedContentView = segmentedContent
-
-        selectionPill.translatesAutoresizingMaskIntoConstraints = false
-        selectionPill.wantsLayer = true
-        selectionPill.layer?.cornerRadius = 8
-        selectionPill.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.20).cgColor
-
-        workspaceSelectionConstraints = [
-            selectionPill.leadingAnchor.constraint(equalTo: workspaceTabButton.leadingAnchor),
-            selectionPill.trailingAnchor.constraint(equalTo: workspaceTabButton.trailingAnchor),
-            selectionPill.topAnchor.constraint(equalTo: workspaceTabButton.topAnchor),
-            selectionPill.bottomAnchor.constraint(equalTo: workspaceTabButton.bottomAnchor),
-        ]
-        outlineSelectionConstraints = [
-            selectionPill.leadingAnchor.constraint(equalTo: outlineTabButton.leadingAnchor),
-            selectionPill.trailingAnchor.constraint(equalTo: outlineTabButton.trailingAnchor),
-            selectionPill.topAnchor.constraint(equalTo: outlineTabButton.topAnchor),
-            selectionPill.bottomAnchor.constraint(equalTo: outlineTabButton.bottomAnchor),
-        ]
-        NSLayoutConstraint.activate(workspaceSelectionConstraints)
-        NSLayoutConstraint.activate([
-            workspaceTabButton.leadingAnchor.constraint(equalTo: segmentedContent.leadingAnchor, constant: 5),
-            workspaceTabButton.centerYAnchor.constraint(equalTo: segmentedContent.centerYAnchor),
-            workspaceTabButton.widthAnchor.constraint(equalTo: outlineTabButton.widthAnchor),
-            outlineTabButton.leadingAnchor.constraint(equalTo: workspaceTabButton.trailingAnchor, constant: 4),
-            outlineTabButton.centerYAnchor.constraint(equalTo: segmentedContent.centerYAnchor),
-            outlineTabButton.trailingAnchor.constraint(equalTo: segmentedContent.trailingAnchor, constant: -5),
-            workspaceTabButton.heightAnchor.constraint(equalToConstant: 22),
-            outlineTabButton.heightAnchor.constraint(equalToConstant: 22),
-        ])
-
-        let tabGlass = makeGlassControl(segmentedContent, cornerRadius: 14, interactive: true)
-        let newFileGlass = makeGlassControl(headerOpenFolderButton, cornerRadius: 14, interactive: true)
-        self.newFileGlass = newFileGlass
-        // Keep the search field as a direct sibling of the glass backing. A
-        // nested NSSearchField inside NSGlassEffectView can lose first-click
-        // focus on macOS 26/27 because the effect view wins hit testing.
-        let searchBacking = NSView()
-        let searchGlass = makeGlassControl(searchBacking, cornerRadius: 12, interactive: true)
-        self.searchGlass = searchGlass
         let header = NSView()
-        header.addSubview(tabGlass)
-        header.addSubview(newFileGlass)
-        header.addSubview(searchGlass)
-        header.addSubview(searchField, positioned: .above, relativeTo: searchGlass)
-        header.addSubview(searchIcon, positioned: .above, relativeTo: searchGlass)
+        header.addSubview(tabControl)
+        header.addSubview(headerOpenFolderButton)
+        header.addSubview(searchField)
         header.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
-            tabGlass.leadingAnchor.constraint(equalTo: header.leadingAnchor),
-            tabGlass.centerYAnchor.constraint(equalTo: header.topAnchor, constant: 14),
-            newFileGlass.trailingAnchor.constraint(equalTo: header.trailingAnchor),
-            newFileGlass.centerYAnchor.constraint(equalTo: tabGlass.centerYAnchor),
-            searchGlass.leadingAnchor.constraint(equalTo: header.leadingAnchor),
-            searchGlass.trailingAnchor.constraint(equalTo: header.trailingAnchor),
-            searchGlass.topAnchor.constraint(equalTo: tabGlass.bottomAnchor, constant: 8),
-            searchGlass.heightAnchor.constraint(equalToConstant: 30),
-            searchGlass.bottomAnchor.constraint(equalTo: header.bottomAnchor),
-            searchIcon.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 10),
-            searchIcon.centerYAnchor.constraint(equalTo: searchGlass.centerYAnchor),
-            searchField.leadingAnchor.constraint(equalTo: searchIcon.trailingAnchor, constant: 6),
-            searchField.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -10),
-            searchField.centerYAnchor.constraint(equalTo: searchGlass.centerYAnchor),
-            searchField.heightAnchor.constraint(equalToConstant: 20),
-            tabGlass.heightAnchor.constraint(equalToConstant: 28),
-            newFileGlass.heightAnchor.constraint(equalToConstant: 28),
+            tabControl.leadingAnchor.constraint(equalTo: header.leadingAnchor),
+            tabControl.topAnchor.constraint(equalTo: header.topAnchor),
+            tabControl.widthAnchor.constraint(lessThanOrEqualToConstant: 180),
+            headerOpenFolderButton.leadingAnchor.constraint(
+                greaterThanOrEqualTo: tabControl.trailingAnchor,
+                constant: 8
+            ),
+            headerOpenFolderButton.trailingAnchor.constraint(equalTo: header.trailingAnchor),
+            headerOpenFolderButton.centerYAnchor.constraint(equalTo: tabControl.centerYAnchor),
+            searchField.leadingAnchor.constraint(equalTo: header.leadingAnchor),
+            searchField.trailingAnchor.constraint(equalTo: header.trailingAnchor),
+            searchField.topAnchor.constraint(equalTo: tabControl.bottomAnchor, constant: 8),
+            searchField.bottomAnchor.constraint(equalTo: header.bottomAnchor),
+            tabControl.heightAnchor.constraint(equalToConstant: 28),
         ])
 
         emptyStateLabel.alignment = .center
@@ -403,8 +234,6 @@ final class SidebarView: NSView {
     func applyLanguage() {
         tabControl.setLabel(localize("工作区"), forSegment: 0)
         tabControl.setLabel(localize("大纲"), forSegment: 1)
-        workspaceTabButton.title = localize("工作区")
-        outlineTabButton.title = localize("大纲")
         let openFolderTitle = localize("打开文件夹")
         let newMarkdownTitle = localize("新建 Markdown 文件")
         headerOpenFolderButton.toolTip = newMarkdownTitle
@@ -428,8 +257,6 @@ final class SidebarView: NSView {
         let effectiveIndex = session.outlineDetached ? 0 : index
         tabControl.setEnabled(!session.outlineDetached, forSegment: 1)
         tabControl.selectedSegment = effectiveIndex
-        updateSegmentedButtonSelection()
-        updateSelectionPill(animated: persist)
         showTab(effectiveIndex, persist: persist, animate: persist)
     }
 
@@ -447,8 +274,6 @@ final class SidebarView: NSView {
 
     private func showTab(_ index: Int, persist: Bool = true, animate: Bool = true) {
         tabControl.selectedSegment = index
-        updateSegmentedButtonSelection()
-        updateSelectionPill(animated: animate && window != nil)
         // 先同步会话标签索引：workspaceChanged/outlineChanged 会读取它判断占位文案
         session.sidebarTabIndex = index
         if persist {
@@ -463,7 +288,6 @@ final class SidebarView: NSView {
             endSearch()
         }
         headerOpenFolderButton.isHidden = !workspaceActive
-        newFileGlass?.setBackingHidden(!workspaceActive)
         updateEmptyStateVisibility(hasWorkspace: session.workspaceRoot != nil)
         if workspaceActive {
             workspaceChanged()
@@ -662,7 +486,7 @@ final class SidebarView: NSView {
 }
 
 /// 独立大纲：在编辑器右侧显示，与左侧工作区并存。
-final class DetachedOutlineView: NSView {
+final class DetachedOutlineView: NSView, NSTextFieldDelegate {
     private(set) var session: EditorSession
     private let titleLabel = NSTextField(labelWithString: L10n.t("大纲"))
     private let searchField = NSSearchField()
@@ -673,13 +497,15 @@ final class DetachedOutlineView: NSView {
         super.init(frame: .zero)
 
         titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        searchField.placeholderString = L10n.t("搜索大纲")
-        searchField.controlSize = .small
-        searchField.translatesAutoresizingMaskIntoConstraints = false
-        searchField.heightAnchor.constraint(equalToConstant: 26).isActive = true
+        searchField.isEditable = true
+        searchField.isSelectable = true
+        searchField.controlSize = .regular
         searchField.sendsSearchStringImmediately = true
-        searchField.target = self
-        searchField.action = #selector(searchChanged)
+        searchField.focusRingType = .none
+        searchField.placeholderString = L10n.t("搜索大纲")
+        searchField.translatesAutoresizingMaskIntoConstraints = false
+        searchField.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        searchField.widthAnchor.constraint(greaterThanOrEqualToConstant: 72).isActive = true
 
         outlineTree.configure(session: session)
         let scroll = NSScrollView()
@@ -733,6 +559,10 @@ final class DetachedOutlineView: NSView {
     }
 
     @objc private func searchChanged() {
+        outlineTree.setFilter(searchField.stringValue)
+    }
+
+    func controlTextDidChange(_ obj: Notification) {
         outlineTree.setFilter(searchField.stringValue)
     }
 }
