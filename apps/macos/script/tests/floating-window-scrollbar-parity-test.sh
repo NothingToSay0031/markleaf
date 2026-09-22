@@ -22,4 +22,23 @@ for file in \
   }
 done
 
+SIDEBAR="$ROOT_DIR/Sources/MarkLeaf/Views/SidebarView.swift"
+CSS="$ROOT_DIR/../../packages/editor-core/src/styles.css"
+grep -Fq 'CompactOverlayScrollView.configure(' "$SIDEBAR" || {
+  echo "FAIL: SidebarView.swift must use the shared overlay scroll configuration" >&2
+  exit 1
+}
+if grep -q 'SidebarOverlayScroller' "$SIDEBAR"; then
+  echo "FAIL: sidebar scrolling must not use a duplicate scroller implementation" >&2
+  exit 1
+fi
+grep -Fq 'width: 6px;' "$CSS" || {
+  echo "FAIL: editor overlay scrollbars must match the shared 6px width" >&2
+  exit 1
+}
+grep -Fq 'static let overlayWidth: CGFloat = 6' "$HELPER" || {
+  echo "FAIL: AppKit overlay scrollbars must match the shared 6px width" >&2
+  exit 1
+}
+
 echo PASS

@@ -15,6 +15,15 @@ enum LiquidGlassRefreshReason {
     case accessibility
 
     var canRefreshGlass: Bool { true }
+
+    var glassRefreshTrigger: GlassRefreshTrigger {
+        switch self {
+        case .explicitTheme, .followSystem: return .themeChanged
+        case .systemAppearance: return .appearanceChanged
+        case .windowActivation: return .keyWindowChanged
+        case .accessibility: return .accessibilityChanged
+        }
+    }
 }
 
 final class LiquidGlassThemeCoordinator {
@@ -32,7 +41,7 @@ final class LiquidGlassThemeCoordinator {
     }
 
     func refreshAll(reason: LiquidGlassRefreshReason, forceDark: Bool?) {
-        guard reason.canRefreshGlass else { return }
+        guard LiquidGlassPerformancePolicy.shouldRefresh(reason.glassRefreshTrigger) else { return }
         GlassSurfaceRegistry.shared.refreshAll(forceDark: forceDark)
     }
 }

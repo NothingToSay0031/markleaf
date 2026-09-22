@@ -3,40 +3,6 @@ import AppKit
 /// A compact AppKit overlay knob that deliberately does not draw the legacy
 /// full-height scroller slot. This keeps native sidebar scrolling visually
 /// closer to the WKWebView editor's overlay indicator.
-final class SidebarOverlayScroller: NSScroller {
-    override class var isCompatibleWithOverlayScrollers: Bool { true }
-
-    override class func scrollerWidth(
-        for controlSize: NSControl.ControlSize,
-        scrollerStyle: NSScroller.Style
-    ) -> CGFloat {
-        scrollerStyle == .overlay ? 6 : super.scrollerWidth(for: controlSize, scrollerStyle: scrollerStyle)
-    }
-
-    override func drawKnobSlot(in slotRect: NSRect, highlight flag: Bool) {
-        // No track: only the active scroll position should be visible.
-    }
-
-    override func drawKnob() {
-        let knobRect = rect(for: .knob)
-        guard knobRect.width > 0, knobRect.height > 0, knobProportion < 1 else { return }
-        let thumbWidth: CGFloat = 5
-        let thumbRect = NSRect(
-            x: knobRect.maxX - thumbWidth,
-            y: knobRect.minY + 1,
-            width: thumbWidth,
-            height: max(12, knobRect.height - 2)
-        )
-        let path = NSBezierPath(
-            roundedRect: thumbRect,
-            xRadius: 2.5,
-            yRadius: 2.5
-        )
-        NSColor.secondaryLabelColor.withAlphaComponent(0.45).setFill()
-        path.fill()
-    }
-}
-
 /// 侧边栏：工作区文件树（对应 C# WorkspaceTreeView + SidebarTabBar）。
 final class SidebarView: NSView {
     static let emptyStateIdentifier = NSUserInterfaceItemIdentifier("Sidebar.emptyState")
@@ -164,17 +130,11 @@ final class SidebarView: NSView {
 
         // 树放入滚动容器，Auto Layout 固定填满；两棵常驻，用 isHidden 切换
         workspaceScroll.documentView = workspaceTree
-        workspaceScroll.hasVerticalScroller = true
-        workspaceScroll.verticalScroller = SidebarOverlayScroller()
-        workspaceScroll.autohidesScrollers = true
-        workspaceScroll.scrollerStyle = .overlay
+        CompactOverlayScrollView.configure(workspaceScroll)
         workspaceScroll.drawsBackground = false
         workspaceScroll.translatesAutoresizingMaskIntoConstraints = false
         outlineScroll.documentView = outlineTree
-        outlineScroll.hasVerticalScroller = true
-        outlineScroll.verticalScroller = SidebarOverlayScroller()
-        outlineScroll.autohidesScrollers = true
-        outlineScroll.scrollerStyle = .overlay
+        CompactOverlayScrollView.configure(outlineScroll)
         outlineScroll.drawsBackground = false
         outlineScroll.translatesAutoresizingMaskIntoConstraints = false
         searchResults.configure()
@@ -196,10 +156,7 @@ final class SidebarView: NSView {
             self.workspaceTree.revealPath(result.entry.path)
         }
         searchScroll.documentView = searchResults
-        searchScroll.hasVerticalScroller = true
-        searchScroll.verticalScroller = SidebarOverlayScroller()
-        searchScroll.autohidesScrollers = true
-        searchScroll.scrollerStyle = .overlay
+        CompactOverlayScrollView.configure(searchScroll)
         searchScroll.drawsBackground = false
         searchScroll.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(workspaceScroll)
@@ -526,10 +483,7 @@ final class DetachedOutlineView: NSView {
         outlineTree.configure(session: session)
         let scroll = NSScrollView()
         scroll.documentView = outlineTree
-        scroll.hasVerticalScroller = true
-        scroll.verticalScroller = SidebarOverlayScroller()
-        scroll.autohidesScrollers = true
-        scroll.scrollerStyle = .overlay
+        CompactOverlayScrollView.configure(scroll)
         scroll.drawsBackground = false
 
         let header = NSStackView(views: [titleLabel, searchField])

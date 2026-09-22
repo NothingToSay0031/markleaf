@@ -53,6 +53,11 @@ final class FindPanelController: NSWindowController, NSTextFieldDelegate, NSSear
         window.isOpaque = false
         window.backgroundColor = .clear
         window.isMovableByWindowBackground = true
+        FloatingWindowChrome.register(
+            window,
+            classification: .navigation,
+            preservesCustomBacking: true
+        )
         super.init(window: window)
         // 标题栏关闭按钮与 ⌘W 走窗口自身的关闭路径，不会触发 closeClicked；
         // 统一监听 willClose 通知前端清理查找高亮，避免关闭面板后蓝色高亮残留。

@@ -30,15 +30,31 @@ extension FloatingWindowClassification: CustomStringConvertible {
 /// gives earlier systems the same readable fallback.
 enum FloatingWindowChrome {
     private static let windows = NSHashTable<NSWindow>.weakObjects()
+    private static var classifications: [ObjectIdentifier: FloatingWindowClassification] = [:]
+    private static var customBackingWindows = Set<ObjectIdentifier>()
 
-    static func register(_ window: NSWindow) {
+    static func register(
+        _ window: NSWindow,
+        classification: FloatingWindowClassification = .content,
+        preservesCustomBacking: Bool = false
+    ) {
         windows.add(window)
+        classifications[ObjectIdentifier(window)] = classification
+        if preservesCustomBacking {
+            customBackingWindows.insert(ObjectIdentifier(window))
+        } else {
+            customBackingWindows.remove(ObjectIdentifier(window))
+        }
     }
 
     static func refreshAll(dark: Bool) {
         let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         for window in windows.allObjects {
             window.appearance = appearance
+            // Compact navigation cards can intentionally use a clear window
+            // backing around one Liquid Glass surface; refresh their appearance
+            // without flattening that custom backing to an opaque rectangle.
+            guard !customBackingWindows.contains(ObjectIdentifier(window)) else { continue }
             window.backgroundColor = .windowBackgroundColor
             window.isOpaque = true
         }
@@ -51,11 +67,15 @@ enum FloatingWindowChrome {
         window.isOpaque = true
         window.backgroundColor = .windowBackgroundColor
         window.tabbingMode = .disallowed
-        register(window)
+        register(window, classification: classification)
 
         window.standardWindowButton(.closeButton)?.isHidden = false
         window.standardWindowButton(.miniaturizeButton)?.isHidden = false
         window.standardWindowButton(.zoomButton)?.isHidden = false
+    }
+
+    static func classification(for window: NSWindow) -> FloatingWindowClassification? {
+        classifications[ObjectIdentifier(window)]
     }
 
     static func titlebarSeparator(for classification: FloatingWindowClassification) -> NSTitlebarSeparatorStyle {

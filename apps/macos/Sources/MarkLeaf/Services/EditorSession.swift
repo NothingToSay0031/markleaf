@@ -1479,16 +1479,20 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
             // AppKit propagates appearance changes on the next layout pass.
             // Refreshing synchronously samples the previous effective
             // appearance and leaves Liquid Glass panes stuck on the old mode.
-            DispatchQueue.main.async { GlassSurfaceRegistry.shared.refreshAll(forceDark: dark) }
+            let reason: LiquidGlassRefreshReason = self.isFollowSystemTheme
+                ? .followSystem
+                : .explicitTheme
+            DispatchQueue.main.async {
+                LiquidGlassThemeCoordinator.shared.refreshAll(reason: reason, forceDark: dark)
+            }
             self.applyScrollbarAppearance(dark: dark)
         }
     }
 
     /// 滚动条外观：autoHideScrollbars 关 → 常显滚动条（跟随主题明暗）；开 → 系统 overlay。
     func applyScrollbarAppearance(dark: Bool) {
-        let legacy = !SettingsService.shared.settings.autoHideScrollbars
         (webView?.superview as? EditorWebContainerView)?.applyThemeAppearance(
-            dark: dark, legacyScrollers: legacy)
+            dark: dark)
     }
 
     func toggleSourceMode() { execute("toggleSourceMode") }

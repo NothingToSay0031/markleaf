@@ -276,7 +276,7 @@ final class EditorWebContainerView: NSView, WKNavigationDelegate {
 
     /// 应用主题外观：color-scheme 让 WebKit 以深色绘制 overlay 滚动条/控件，
     /// appearance 同步系统控件。WKWebView 无公开的内部 NSScrollView，无法用 legacy 滚动条。
-    func applyThemeAppearance(dark: Bool, legacyScrollers: Bool) {
+    func applyThemeAppearance(dark: Bool) {
         // Keep light mode explicit. Inheriting through nil can lag one
         // appearance-propagation pass behind the parent window during a
         // dark-to-light switch, leaving WebKit controls on the old palette.

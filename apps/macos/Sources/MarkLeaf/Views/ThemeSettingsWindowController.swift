@@ -61,7 +61,7 @@ final class ThemeSettingsWindowController: NSWindowController, NSWindowDelegate,
         window.title = L10n.t("主题设置")
         window.isReleasedWhenClosed = false
         window.contentMinSize = NSSize(width: 680, height: 460)
-        FloatingWindowChrome.register(window)
+        FloatingWindowChrome.configure(window, classification: .navigation)
         window.center()
         super.init(window: window)
         window.delegate = self
