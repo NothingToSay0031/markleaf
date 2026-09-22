@@ -34,6 +34,14 @@ final class SidebarView: NSView {
         searchField.textColor = isEnabled ? .labelColor : .secondaryLabelColor.withAlphaComponent(0.55)
     }
 
+    /// Search availability is derived state. Editor callbacks can arrive after
+    /// a tab switch or rebind, so every callback must use this single source.
+    private func syncSearchAvailability() {
+        let isOutlineTab = session.sidebarTabIndex == 1
+        searchField.isEnabled = isOutlineTab || session.workspaceRoot != nil
+        updateSearchAvailability()
+    }
+
     /// Exposes the native search field to @testable layout regression tests.
     var searchFieldForTesting: NSSearchField { searchField }
 
@@ -364,8 +372,7 @@ final class SidebarView: NSView {
             )
             guard case .noSupportedFiles = state else {
                 emptyStateView.isHidden = true
-                searchField.isEnabled = session.sidebarTabIndex == 1 || hasWorkspace
-                updateSearchAvailability()
+                syncSearchAvailability()
                 return
             }
             emptyStateLabel.stringValue = localize("当前工作区没有受支持的文件")
@@ -374,15 +381,14 @@ final class SidebarView: NSView {
             emptyStateOpenFolderButton.action = #selector(newMarkdownFileFromHeader)
             emptyStateView.isHidden = false
         }
-        searchField.isEnabled = session.sidebarTabIndex == 1 || hasWorkspace
+        syncSearchAvailability()
         if !hasWorkspace && isWorkspaceTab && isSearching {
             endSearch()
         }
     }
 
     func outlineChanged() {
-        searchField.isEnabled = true
-        updateSearchAvailability()
+        syncSearchAvailability()
         outlineTree.reloadData(activePosition: session.activeOutlinePosition)
     }
 
