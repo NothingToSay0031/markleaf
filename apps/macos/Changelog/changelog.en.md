@@ -1,38 +1,50 @@
 # MarkLeaf Changelog
 
-## 1.7.7 — 2026-09-22
+## 1.7.7 — 2026-09-24
 
 ### Added
 
 - Added a Quick Look preview extension for Markdown, Markdown variants, and plain-text files in Finder.
 - Added Read-only mode, which blocks editing in visual and source modes.
 - Added stable reading anchors, so reading positions are more reliable after edits, mode changes, or reopening documents.
+- Added an optional external code formatter system that formats whole code blocks and selected code snippets, with keyboard shortcuts and context-menu entries.
+- Added an SQL dialect setting so the SQL formatting dialect can be chosen explicitly in Preferences.
+- Added an “Open” action to the unsaved-file recovery window, so a recovered document can be edited immediately without being saved first.
 - Added `Tab` / `Shift+Tab` indent and outdent support in code blocks.
 - Added a Code Block Spell Check option to Markdown behavior settings, disabled by default.
 - Added confirmation prompts before destructive actions such as Clear History.
 
 ### Changed
 
-- Further adapted Liquid Glass for macOS 26/27 across the title bar, sidebar, tab bar, status bar, and selected floating windows.
+- Further adapted Liquid Glass for macOS 26/27 across the title bar, sidebar, tab bar, status bar, Preferences, and selected floating windows.
+- Switched sidebar toggle, search, and filter controls to a more native Liquid Glass style, with improved vertical alignment and availability states.
 - Refined the editor tab bar appearance, with a clearer capsule style for the selected tab.
 - Unified scrollbar widths and overlay styling across the sidebar, floating windows, and editor.
-- Improved copy semantics, so selection exports preserve task lists, footnote references, and footnote definitions more completely.
+- When “Sync with OS” is turned off, the currently displayed color theme is preserved; later manual theme changes take effect immediately.
+- When multi-tab mode is disabled, options that depend on new tabs are disabled and incompatible file-opening choices are rolled back.
+- Split visual typography settings into a separate lightweight window and improved alignment for font, appearance, and input controls.
+- Regrouped editor options in Preferences for a tidier layout.
+- Improved copy semantics, so selection exports preserve task lists, footnote references, footnote definitions, and table cell selections more completely.
+- Completed syntax highlighting for declared code-language presets and external formatter languages, and unified their display order.
 - Source mode now supports chapter detection and chapter navigation.
 - Improved drag-selection highlight performance for long documents and large selections.
-- Regrouped editor options in Preferences for a tidier layout.
 
 ### Fixed
 
 - Fixed an occasional white flash in the editor when creating a tab.
 - Fixed delayed color updates for the title bar, sidebar, status bar, and some controls on first launch or when switching light and dark modes.
-- Fixed some Liquid Glass controls retaining their old appearance after switching from dark to light mode.
+- Fixed a manually selected color theme being overwritten by the old theme.
+- Fixed the disabled color-theme control not showing the actual active theme while “Sync with OS” was enabled.
 - Fixed the overflow menu arrow becoming unclickable when there are many tabs.
-- Fixed outline status text such as “Outline 0 items” disappearing or flickering after hiding and showing the sidebar.
+- Fixed some status information disappearing or flickering after hiding and showing the sidebar.
+- Fixed sidebar search-field vertical alignment and cases where clicking it did not start a search.
+- Fixed the workspace search field being incorrectly available when no workspace was open.
 - Fixed Markdown and plain-text files dragged from Finder not opening.
 - Fixed unstable highlights, whole-line false highlights, or selections that could not be cleared during long-document drags, Shift+arrow selection, or autoscroll near window edges.
-- Fixed inaccurate heading and paragraph positioning, improving reading-position restoration.
+- Fixed copying only the current cell when multiple table cells were selected.
 - Fixed right-clicking inside a drag selection collapsing it to the clicked position.
 - Fixed a brief false highlight of preceding text when dragging across boundaries with CJK and Western auto-spacing enabled.
+- Fixed inaccurate heading and paragraph positioning, improving reading-position restoration.
 
 ## 1.7.6 — 2026-09-12
 

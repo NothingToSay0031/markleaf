@@ -19,7 +19,9 @@ final class RecoveryWindowController: NSWindowController, NSTableViewDataSource,
     let tableView = NSTableView()
     private let timeFormatter = DateFormatter()
     let introductionLabel: NSTextField
+    var onOpen: ((RecoverySnapshot) -> Void)?
     private var saveOriginalButton: NSButton?
+    private(set) var openButton: NSButton?
     private(set) var saveAsButton: NSButton?
     private(set) var discardSelectedButton: NSButton?
     private(set) var discardAllButton: NSButton?
@@ -76,6 +78,16 @@ final class RecoveryWindowController: NSWindowController, NSTableViewDataSource,
         saveOriginalButton.isHidden = true
         self.saveOriginalButton = saveOriginalButton
 
+        let openButton = NSButton(
+            title: L10n.translate(RecoveryOpenPolicy.buttonTitle, language: language),
+            target: self,
+            action: #selector(openSelected)
+        )
+        openButton.bezelStyle = .rounded
+        openButton.isHidden = true
+        openButton.isEnabled = false
+        self.openButton = openButton
+
         let saveAsButton = NSButton(title: L10n.translate("另存为…", language: language), target: self, action: #selector(saveAs))
         saveAsButton.keyEquivalent = "\r"
         saveAsButton.isHidden = true
@@ -105,6 +117,7 @@ final class RecoveryWindowController: NSWindowController, NSTableViewDataSource,
 
         let buttons = NSStackView(views: [
             saveOriginalButton,
+            openButton,
             saveAsButton,
             discardSelectedButton,
             discardAllButton,
@@ -181,13 +194,23 @@ final class RecoveryWindowController: NSWindowController, NSTableViewDataSource,
         let selected = row >= 0 && row < snapshots.count
         let hasPath = selected && (snapshots[row].documentPath?.isEmpty == false)
         saveOriginalButton?.isHidden = !hasPath
+        openButton?.isHidden = !selected
         saveAsButton?.isHidden = !selected
         discardSelectedButton?.isHidden = !selected
+        openButton?.isEnabled = selected
         saveAsButton?.isEnabled = selected
         discardSelectedButton?.isEnabled = selected
     }
 
     // MARK: - Actions
+
+    @objc private func openSelected() {
+        let row = tableView.selectedRow
+        guard row >= 0, row < snapshots.count else { return }
+        let snapshot = snapshots[row]
+        onOpen?(snapshot)
+        completeProcessing(row: row)
+    }
 
     @objc private func saveAs() {
         let row = tableView.selectedRow

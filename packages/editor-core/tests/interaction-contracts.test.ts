@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { CellSelection } from '@tiptap/pm/tables'
 import { createEditor, executeEditorCommand, expandSourceEditor, exportEditorSelection, findInEditor, getMarkdown, getFootnoteLabels, replaceAllInEditor,
   replaceCurrentInEditor, setBlockHandleVisible, setMarkdownEditingSettings } from '../src/index'
 import { createEditorInteractions } from '../src/index'
 
 const cleanup: Array<() => void> = []
-function setup(markdown: string) {
+function setup(markdown: string, themedVisualSelection = false) {
   document.body.innerHTML = '<div id="toolbar"><button data-command="formatPainter"></button></div><main id="editor"></main><footer><span id="count"></span></footer>'
   const mount = document.querySelector<HTMLElement>('#editor')!
-  const editor = createEditor(mount, markdown, false, { externalHistory: true })
+  const editor = createEditor(mount, markdown, false, { externalHistory: true, themedVisualSelection })
   editor.view.setProps({ handleScrollToSelection: () => true })
   cleanup.push(() => editor.destroy())
   return { editor, mount }
@@ -110,6 +111,101 @@ describe('shared editing interactions', () => {
     expect(editor.state.doc.firstChild?.childCount).toBe(5)
     expect(executeEditorCommand(editor, 'deleteColumn')).toBe(true)
     expect(editor.state.doc.firstChild?.firstChild?.childCount).toBe(4)
+  })
+
+  it('keeps multi-cell selections intact after mouseup', async () => {
+    const { editor } = setup('| a | b | c |\n| - | - | - |\n| 1 | 2 | 3 |')
+    const cellPositions: number[] = []
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name !== 'tableCell' && node.type.name !== 'tableHeader') return true
+      cellPositions.push(pos)
+      return false
+    })
+    expect(cellPositions.length).toBeGreaterThanOrEqual(6)
+
+    const selection = CellSelection.create(
+      editor.state.doc,
+      cellPositions[0]!,
+      cellPositions[2]!,
+    )
+    editor.view.dispatch(editor.state.tr.setSelection(selection))
+    expect(editor.state.selection instanceof CellSelection).toBe(true)
+    expect(editor.state.selection.ranges.length).toBe(3)
+
+    // A real drag leaves a WebKit DOM selection behind. Reproduce that state;
+    // otherwise the mouseup normalization has nothing to collapse.
+    const firstRange = selection.ranges[0]!
+    const lastRange = selection.ranges[selection.ranges.length - 1]!
+    const tableDom = editor.view.dom.querySelector('table')!
+    const domRange = document.createRange()
+    domRange.selectNodeContents(tableDom)
+    const domSelection = window.getSelection()!
+    domSelection.removeAllRanges()
+    domSelection.addRange(domRange)
+
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    await new Promise(resolve => setTimeout(resolve, 20))
+
+    expect(editor.state.selection instanceof CellSelection).toBe(true)
+    expect(editor.state.selection.ranges.length).toBe(3)
+    expect(document.querySelectorAll('.selectedCell').length).toBe(3)
+  })
+
+  it('does not redispatch an identical cell selection while the pointer moves', () => {
+    const { editor } = setup('| a | b | c |\n| - | - | - |\n| 1 | 2 | 3 |')
+    const cellPositions: number[] = []
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name !== 'tableCell' && node.type.name !== 'tableHeader') return true
+      cellPositions.push(pos)
+      return false
+    })
+
+    const cellDom = editor.view.dom.querySelector('td,th')!
+    const dispatchSpy = vi.spyOn(editor.view, 'dispatch')
+    const posAtCoordsSpy = vi.spyOn(editor.view, 'posAtCoords')
+      .mockReturnValue({ pos: cellPositions[2]!, inside: -1 })
+
+    cellDom.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true, button: 0, buttons: 1,
+      clientX: 10, clientY: 10,
+    }))
+    editor.view.dispatch(editor.state.tr.setSelection(
+      CellSelection.create(editor.state.doc, cellPositions[0]!, cellPositions[2]!),
+    ))
+
+    const move = () => cellDom.dispatchEvent(new MouseEvent('mousemove', {
+      bubbles: true, button: 0, buttons: 1,
+      clientX: 10, clientY: 10,
+    }))
+    move()
+    move()
+    expect(posAtCoordsSpy.mock.calls.length).toBeGreaterThan(0)
+    expect(dispatchSpy).toHaveBeenCalledTimes(1)
+
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }))
+    posAtCoordsSpy.mockRestore()
+    dispatchSpy.mockRestore()
+  })
+
+  it('keeps native text selection available while dragging inside one table cell', () => {
+    const { editor } = setup('| first cell text | second cell |\n| --- | --- |', true)
+    const firstCell = editor.view.dom.querySelector('th,td')!
+    const text = firstCell.querySelector('p')!.firstChild!
+    const domSelection = window.getSelection()!
+    domSelection.setBaseAndExtent(text, 0, text, 5)
+    // jsdom has no hit testing; both pointer events stay in the first cell.
+    vi.spyOn(editor.view, 'posAtCoords').mockReturnValue({ pos: 2, inside: -1 })
+
+    firstCell.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true, button: 0, buttons: 1,
+    }))
+    firstCell.dispatchEvent(new MouseEvent('mousemove', {
+      bubbles: true, button: 0, buttons: 1,
+    }))
+
+    expect(editor.view.dom.classList.contains('markleaf-cell-selecting')).toBe(false)
+    expect(domSelection.toString()).toBe('first')
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }))
   })
 
   it('collects unreferenced footnotes and edits their labels and definitions', () => {

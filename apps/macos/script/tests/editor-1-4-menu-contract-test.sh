@@ -45,6 +45,19 @@ for method in \
   require_text "$CODE_FILE" "$method"
 done
 
+require_text "$CODE_FILE" 'let languagePopup = NSPopUpButton('
+require_text "$CODE_FILE" 'let customLanguageField = NSTextField('
+if grep -Fq 'NSComboBox()' "$CODE_FILE"; then
+  echo "FAIL: code language picker must not use NSComboBox in macOS 27 sheets" >&2
+  exit 1
+fi
+
+require_text "$SESSION_FILE" 'send("setCodeFormatterSettings", payload:'
+if grep -Fq 'execute("setCodeFormatterSettings"' "$SESSION_FILE"; then
+  echo "FAIL: formatter settings must use the dedicated host protocol message" >&2
+  exit 1
+fi
+
 for method in \
   'func goToFootnoteReference()' \
   'func clearFootnoteReferences()' \

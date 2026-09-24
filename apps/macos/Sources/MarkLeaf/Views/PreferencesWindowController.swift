@@ -51,15 +51,12 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private let recordRecentFoldersCheck = NSButton(checkboxWithTitle: L10n.t("记录最近文件夹"), target: nil, action: nil)
 
     // 编辑器
-    private let lineHeightField = NSTextField(string: "1.6")
-    private let fontSizeField = NSTextField(string: "16")
-    private let maxWidthField = NSTextField(string: "820")
     private let sourceFontSizeField = NSTextField(string: "14")
     private var sourceFontField: FontField!
     private var sourceCjkFontField: FontField!
     private let sourceIndentField = NSTextField(string: "2")
+    private let sqlDialectPopup = NSPopUpButton()
     private var cjkLanguageTag: CJKLanguageTag
-    private let visualCjkAutoSpacingCheck = NSButton(checkboxWithTitle: L10n.t("中西文与数字之间自动添加空格"), target: nil, action: nil)
     private let ignoreMaxWidthCheck = NSButton(checkboxWithTitle: L10n.t("无视最大宽度限制"), target: nil, action: nil)
     private let blockHandleCheck = NSButton(checkboxWithTitle: L10n.t("显示段落块句柄"), target: nil, action: nil)
 
@@ -90,6 +87,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
 
     private var styleIDs: [String] = []
     private var themeIDs: [String] = []
+    private var activeThemeID: String?
     private var defaultLightThemeIDs: [String] = []
     private var defaultDarkThemeIDs: [String] = []
     /// 所有使用勾选样式的按钮，用于布局时识别并统一宽度，让勾选框方块垂直对齐。
@@ -108,6 +106,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     init(
         styles: [StyleDefinition],
         themes: [ColorThemeInfo],
+        currentThemeID: String? = nil,
         initialSelectedPageIndex: Int = 0
     ) {
         let settings = SettingsService.shared.settings
@@ -163,9 +162,6 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         recordRecentFilesCheck.state = settings.recordRecentFiles ? .on : .off
         recordRecentFoldersCheck.state = settings.recordRecentFolders ? .on : .off
 
-        lineHeightField.stringValue = String(format: "%.2f", settings.visualLineHeight)
-        fontSizeField.stringValue = "\(settings.visualFontSize)"
-        maxWidthField.stringValue = "\(settings.visualMaxContentWidth)"
         sourceFontSizeField.stringValue = "\(settings.sourceFontSize)"
         sourceFontField = FontField(fontName: settings.sourceFontFamily) { [weak self] _ in
             self?.controlChanged()
@@ -174,7 +170,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             self?.controlChanged()
         }
         sourceIndentField.stringValue = "\(settings.sourceIndentWidth)"
-        visualCjkAutoSpacingCheck.state = settings.visualCjkAutoSpacing ? .on : .off
+        sqlDialectPopup.addItems(withTitles: SQLFormatterDialect.allCases.map(\.displayName))
+        sqlDialectPopup.selectItem(at: SQLFormatterDialect.allCases.firstIndex(of: settings.sqlFormatterDialect) ?? 0)
         ignoreMaxWidthCheck.state = settings.visualIgnoreMaxWidth ? .on : .off
         blockHandleCheck.state = settings.showParagraphBlockHandle ? .on : .off
         stylePopup.addItems(withTitles: styles.map { L10n.t($0.displayName) })
@@ -182,7 +179,10 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             stylePopup.selectItem(at: idx)
         }
         themePopup.addItems(withTitles: themes.map { L10n.t($0.displayName) })
-        if let idx = themes.firstIndex(where: { $0.id == settings.colorTheme }) {
+        activeThemeID = settings.followSystemTheme
+            ? (currentThemeID ?? settings.colorTheme)
+            : settings.colorTheme
+        if let idx = themes.firstIndex(where: { $0.id == activeThemeID }) {
             themePopup.selectItem(at: idx)
         }
         restoreZoomCheck.state = settings.restoreZoomOnOpen ? .on : .off
@@ -230,8 +230,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         prefixDotSlashCheck.state = settings.prefixRelativeWithDotSlash ? .on : .off
 
         // 控件样式：文本框圆角，数字框居中
-        for field in [snapshotIntervalField, lineHeightField, fontSizeField, maxWidthField,
-                      sourceFontSizeField, sourceIndentField] {
+        for field in [snapshotIntervalField,
+                       sourceFontSizeField, sourceIndentField] {
             field.bezelStyle = .roundedBezel
             field.alignment = .center
             field.widthAnchor.constraint(equalToConstant: PreferencesWindowLayout.numericFieldWidth).isActive = true
@@ -244,15 +244,6 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
                 field: snapshotIntervalField, fractionDigits: 0,
                 upperBound: Double(AppSettings.snapshotIntervalRange.upperBound)),
             BoundedTextFieldMonitor(
-                field: lineHeightField, fractionDigits: 2,
-                upperBound: AppSettings.visualLineHeightRange.upperBound),
-            BoundedTextFieldMonitor(
-                field: fontSizeField, fractionDigits: 0,
-                upperBound: Double(AppSettings.visualFontSizeRange.upperBound)),
-            BoundedTextFieldMonitor(
-                field: maxWidthField, fractionDigits: 0,
-                upperBound: Double(AppSettings.visualMaxContentWidthRange.upperBound)),
-            BoundedTextFieldMonitor(
                 field: sourceFontSizeField, fractionDigits: 0,
                 upperBound: Double(AppSettings.sourceFontSizeRange.upperBound)),
             BoundedTextFieldMonitor(
@@ -264,7 +255,6 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         checkboxButtons = [
             multiTabCheck, autoSaveCheck, saveOnSwitchCheck, recordRecentFilesCheck, recordRecentFoldersCheck,
                       blockHandleCheck, restoreZoomCheck, ctrlWheelZoomCheck, topMostCheck,
-            visualCjkAutoSpacingCheck,
             autoHideScrollbarsCheck, followSystemCheck, codeHighlightCheck, associateMDCheck, associateTextCheck,
             useRelativePathsCheck, prefixDotSlashCheck,
         ]
@@ -298,9 +288,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
 
         // 绑定
         let controls: [NSControl] = [startupPopup, externalFileOpenModePopup, workspaceOpenModePopup, multiTabCheck, autoSaveCheck, saveOnSwitchCheck, defaultEncodingPopup, newLinePopup, recordRecentFilesCheck,
-                                     recordRecentFoldersCheck, stylePopup, themePopup,
+                                     recordRecentFoldersCheck, sqlDialectPopup, stylePopup, themePopup,
                                      defaultLightThemePopup, defaultDarkThemePopup,
-                                     restoreZoomCheck, ctrlWheelZoomCheck, blockHandleCheck, visualCjkAutoSpacingCheck, topMostCheck, autoHideScrollbarsCheck,
+                                     restoreZoomCheck, ctrlWheelZoomCheck, blockHandleCheck, topMostCheck, autoHideScrollbarsCheck,
                                      followSystemCheck, languagePopup,
                                      associateMDCheck, associateTextCheck, clipboardImagePopup, fileImagePopup,
                                      useRelativePathsCheck, prefixDotSlashCheck]
@@ -308,7 +298,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             control.target = self
             control.action = #selector(controlChanged)
         }
-        for field in [snapshotIntervalField, lineHeightField, fontSizeField, maxWidthField,
+        for field in [snapshotIntervalField,
                       sourceFontSizeField, sourceIndentField, imageDirectoryField] {
             field.target = self
             field.action = #selector(controlChanged)
@@ -506,9 +496,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     }
 
     private func editorPage() -> NSView {
-        let editorCenteredCheckboxes: Set<NSButton> = [visualCjkAutoSpacingCheck]
+        let editorCenteredCheckboxes: Set<NSButton> = []
         let editorAlignedCheckboxes: Set<NSButton> = [restoreZoomCheck, ctrlWheelZoomCheck]
-        let primaryLabelWidth = ceil((L10n.t("基础行高") as NSString).size(
+        let primaryLabelWidth = ceil((L10n.t("默认缩进宽度") as NSString).size(
             withAttributes: [.font: NSFont.systemFont(ofSize: 13)]
         ).width)
         let labeledFieldLeadingInset = displayLanguage == "zh-Hans"
@@ -522,15 +512,14 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             .header(L10n.t("文档与标签")),
             .checkboxGroup([multiTabCheck, ignoreMaxWidthCheck, blockHandleCheck]),
             .header(L10n.t("可视化")),
-            .field(L10n.t("基础行高"), lineHeightField),
-            .field(L10n.t("基础字号"), fontSizeField),
-            .field(L10n.t("最大内容宽度"), fieldRow(maxWidthField, unit: "px")),
-            .field("", visualCjkAutoSpacingCheck),
+            .field("", linkButton(L10n.t("可视化设置…"), #selector(openVisualSettings))),
             .header(L10n.t("源码模式")),
             .field("", linkButton(L10n.t("字体设置…"), #selector(openFontSettings))),
             .field(L10n.t("默认缩进宽度"), sourceIndentField),
             .header(L10n.t("Markdown 行为")),
             .field("", linkButton(L10n.t("Markdown 行为…"), #selector(openMarkdownBehaviorSettings))),
+            .header(L10n.t("代码格式化器")),
+            .field("", centeredFieldRow(sqlDialectCenteredRow())),
             .header(L10n.t("缩放视图")),
             .field("", restoreZoomCheck),
             .field("", ctrlWheelZoomCheck),
@@ -538,6 +527,14 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         ], labeledFieldLeadingInset: labeledFieldLeadingInset,
            intrinsicallyCenteredCheckboxes: editorCenteredCheckboxes,
            checkboxAlignmentControls: editorAlignedCheckboxes)
+    }
+
+    private func sqlDialectCenteredRow() -> NSView {
+        let labelColumnWidth = ceil((L10n.t("SQL 方言") as NSString).size(
+            withAttributes: [.font: NSFont.systemFont(ofSize: 13)]
+        ).width)
+        let row = fieldRow(L10n.t("SQL 方言"), sqlDialectPopup, labelColumnWidth: labelColumnWidth)
+        return centeredFieldRow(row)
     }
 
     private func appearancePage() -> NSView {
@@ -609,8 +606,19 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     func syncFollowSystemThemeState() {
         followSystemCheck.state = SettingsService.shared.settings.followSystemTheme ? .on : .off
         themePopup.isEnabled = !SettingsService.shared.settings.followSystemTheme
+        if let activeThemeID,
+           let idx = themeIDs.firstIndex(where: { $0 == activeThemeID }) {
+            themePopup.selectItem(at: idx)
+        }
         defaultLightThemePopup.isEnabled = SettingsService.shared.settings.followSystemTheme
         defaultDarkThemePopup.isEnabled = SettingsService.shared.settings.followSystemTheme
+    }
+
+    func syncActiveTheme(_ themeID: String?) {
+        guard let themeID,
+              let idx = themeIDs.firstIndex(of: themeID) else { return }
+        activeThemeID = themeID
+        themePopup.selectItem(at: idx)
     }
 
     @objc private func controlChanged() {
@@ -623,12 +631,26 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     }
 
     private func commitControlChanges() {
-        guard !isInitializingControls, invalidNumericFieldLabel() == nil else { return }
+        guard !isInitializingControls, invalidNumericFieldLabel() == nil else {
+            return
+        }
         let oldLanguage = SettingsService.shared.settings.displayLanguage
+        let oldFollowSystemTheme = SettingsService.shared.settings.followSystemTheme
         var collected = SettingsService.shared.settings
         collectSettings(into: &collected)
+        let disabledSystemSync = oldFollowSystemTheme && !collected.followSystemTheme
+
+        // 关闭同步只是解除系统联动；当前看到的主题应保持不变，直到用户显式选择另一个主题。
+        if disabledSystemSync,
+           let renderedThemeID = AppWindowManager.shared.activeSession?.currentThemeId,
+           let renderedIndex = themeIDs.firstIndex(of: renderedThemeID) {
+            collected.colorTheme = renderedThemeID
+            activeThemeID = renderedThemeID
+            themePopup.selectItem(at: renderedIndex)
+        }
+
         SettingsService.shared.update { $0 = collected }
-        AppWindowManager.shared.applyThemeModeToAll()
+        AppWindowManager.shared.applyThemeModeToAll(preservesRenderedTheme: disabledSystemSync)
         onSettingsChanged?()
         FileAssociationService.shared.apply(settings: collected)
         if collected.displayLanguage != oldLanguage {
@@ -704,22 +726,23 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         settings.recordRecentFiles = recordRecentFilesCheck.state == .on
         settings.recordRecentFolders = recordRecentFoldersCheck.state == .on
 
-        settings.visualLineHeight = Double(lineHeightField.stringValue) ?? 1.6
-        settings.visualFontSize = Int(fontSizeField.stringValue) ?? 16
-        settings.visualMaxContentWidth = Int(maxWidthField.stringValue) ?? 820
         settings.sourceFontSize = Int(sourceFontSizeField.stringValue) ?? 14
         settings.sourceFontFamily = sourceFontField.fontName
         settings.sourceCjkFontFamily = sourceCjkFontField.fontName
         settings.cjkLanguageTag = cjkLanguageTag
-        settings.visualCjkAutoSpacing = visualCjkAutoSpacingCheck.state == .on
         settings.visualIgnoreMaxWidth = ignoreMaxWidthCheck.state == .on
         settings.sourceIndentWidth = Int(sourceIndentField.stringValue) ?? 2
+        if sqlDialectPopup.indexOfSelectedItem >= 0,
+           sqlDialectPopup.indexOfSelectedItem < SQLFormatterDialect.allCases.count {
+            settings.sqlFormatterDialect = SQLFormatterDialect.allCases[sqlDialectPopup.indexOfSelectedItem]
+        }
         settings.showParagraphBlockHandle = blockHandleCheck.state == .on
 
         if stylePopup.indexOfSelectedItem >= 0, stylePopup.indexOfSelectedItem < styleIDs.count {
             settings.markdownStyle = styleIDs[stylePopup.indexOfSelectedItem]
         }
-        if themePopup.indexOfSelectedItem >= 0, themePopup.indexOfSelectedItem < themeIDs.count {
+        if !settings.followSystemTheme,
+           themePopup.indexOfSelectedItem >= 0, themePopup.indexOfSelectedItem < themeIDs.count {
             settings.colorTheme = themeIDs[themePopup.indexOfSelectedItem]
         }
         settings.restoreZoomOnOpen = restoreZoomCheck.state == .on
@@ -756,7 +779,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
 
     /// 数值字段校验：返回第一个无效字段的错误文案（nil 表示全部有效）。
     private func invalidNumericFieldLabel() -> String? {
-        for field in [snapshotIntervalField, lineHeightField, fontSizeField, maxWidthField,
+        for field in [snapshotIntervalField,
                       sourceFontSizeField, sourceIndentField] {
             if let message = invalidMessage(for: field) {
                 return message
@@ -784,12 +807,6 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         switch field {
         case snapshotIntervalField:
             return intMessage(AppSettings.snapshotIntervalRange, L10n.t("快照保存间隔"))
-        case lineHeightField:
-            return doubleMessage(AppSettings.visualLineHeightRange, L10n.t("基础行高"))
-        case fontSizeField:
-            return intMessage(AppSettings.visualFontSizeRange, L10n.t("基础字号"))
-        case maxWidthField:
-            return intMessage(AppSettings.visualMaxContentWidthRange, L10n.t("最大内容宽度"))
         case sourceFontSizeField:
             return intMessage(AppSettings.sourceFontSizeRange, L10n.t("源码字号"))
         case sourceIndentField:
@@ -816,6 +833,24 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         sourceFontSizeField.stringValue = "\(dialog.fontSize)"
         cjkLanguageTag = dialog.cjkLanguageTag
         controlChanged()
+    }
+
+    @objc private func openVisualSettings() {
+        let settings = SettingsService.shared.settings
+        let dialog = VisualSettingsWindowController(
+            lineHeight: settings.visualLineHeight,
+            fontSize: settings.visualFontSize,
+            maxContentWidth: settings.visualMaxContentWidth,
+            visualCjkAutoSpacing: settings.visualCjkAutoSpacing
+        )
+        guard dialog.runModal() else { return }
+        SettingsService.shared.update { settings in
+            settings.visualLineHeight = dialog.lineHeight
+            settings.visualFontSize = dialog.fontSize
+            settings.visualMaxContentWidth = dialog.maxContentWidth
+            settings.visualCjkAutoSpacing = dialog.visualCjkAutoSpacing
+        }
+        AppWindowManager.shared.applyPreferencesToAll()
     }
 
     @objc private func openMarkdownBehaviorSettings() {

@@ -156,6 +156,8 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
         "rotateImage", "resizeImage", "resizeImage100", "resizeImage75", "resizeImage90", "resizeImage50",
         "changeImage", "clearFormat",
         "formatPainter", "formatPainterArm", "formatPainterApply",
+        "formatCodeBlock",
+        "normalizeInlineCode",
         "insertMathInline", "insertMathBlock", "editMath", "setMathNumber", "convertMath", "deleteMath", "exitCode",
         "insertAlertNote", "insertAlertTip", "insertAlertImportant",
         "insertAlertWarning", "insertAlertCaution", "showFrontMatter",
@@ -598,6 +600,46 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
                 copyCodeBlockText(text)
             }
 
+        case "codeFormatRequested":
+            guard let payload,
+                  let code = payload["code"] as? String,
+                  let language = payload["language"] as? String else { break }
+            let selectionStartLine = payload["selectionStartLine"] as? Int
+            let selectionEndLine = payload["selectionEndLine"] as? Int
+            let selectionLineRange: ClosedRange<Int>?
+            if let selectionStartLine, let selectionEndLine,
+               selectionStartLine >= 1, selectionEndLine >= selectionStartLine {
+                selectionLineRange = selectionStartLine...selectionEndLine
+            } else {
+                selectionLineRange = nil
+            }
+            let formatterRequestId = message["requestId"] as? String
+            statusText = L10n.t("正在格式化代码…")
+            ExternalCodeFormatterService.shared.format(
+                ExternalCodeFormatterRequest(
+                    code: code,
+                    language: language,
+                    selectionLineRange: selectionLineRange
+                )
+            ) { [weak self] outcome in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    let result: [String: Any]
+                    switch outcome {
+                    case .formatted(let formatted):
+                        result = ["status": "formatted", "code": formatted]
+                        self.statusText = L10n.t("已格式化")
+                    case .unchanged:
+                        result = ["status": "unchanged"]
+                        self.statusText = L10n.t("代码格式已是最新")
+                    case .failed(let message):
+                        result = ["status": "failed", "message": message]
+                        self.statusText = L10n.t("格式化失败")
+                    }
+                    self.send("codeFormatResult", payload: result, requestId: formatterRequestId)
+                }
+            }
+
         case "pasteImage":
             pasteFromClipboard()
 
@@ -840,6 +882,7 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
         payload["visualCjkAutoSpacing"] = saved.visualCjkAutoSpacing
         send("applyStyles", payload: payload)
         applyMarkdownEditingSettings()
+        applyCodeFormatterSettings()
         // 下发界面语言（前端查找栏等文案本地化）
         execute("setLanguage", text: SettingsService.shared.settings.displayLanguage)
         onStylesReady?()
@@ -852,6 +895,7 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
         applyVisualVariables(fontSize: nil, maxWidth: nil)
         applySourceIndent()
         applyMarkdownEditingSettings()
+        applyCodeFormatterSettings()
         applyBlockHandleVisibility(settings.showParagraphBlockHandle)
         setCodeHighlightVisible(settings.showCodeHighlight)
         if settings.restoreZoomOnOpen {
@@ -868,6 +912,14 @@ final class EditorSession: NSObject, WKScriptMessageHandler, WKNavigationDelegat
         execute("setMarkdownEditingSettings", text: """
         {"exitBlockOnEmptyEnter":\(settings.exitBlockOnEmptyEnter ? "true" : "false"),"useShiftEnterHardBreak":\(settings.useShiftEnterHardBreak ? "true" : "false"),"codeFence":"\(settings.markdownCodeFence)","emphasisMarker":"\(settings.markdownEmphasisMarker)","bulletMarker":"\(settings.markdownBulletMarker)","escapeLiteralSymbols":\(settings.escapeLiteralSymbols ? "true" : "false"),"escapeMarkdownLiteralSymbols":\(settings.escapeMarkdownLiteralSymbols ? "true" : "false"),"codeBlockSpellcheck":\(settings.codeBlockSpellcheck ? "true" : "false")}
         """)
+    }
+
+    /// 通知前端当前机器可用的可选代码格式化语言。
+    private func applyCodeFormatterSettings() {
+        let languages = ExternalCodeFormatterCatalog.availableLanguages(
+            configuredPaths: SettingsService.shared.settings.codeFormatterPaths
+        )
+        send("setCodeFormatterSettings", payload: ["languages": languages])
     }
 
     var currentThemeIsDark: Bool {

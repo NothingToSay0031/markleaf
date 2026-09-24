@@ -330,6 +330,7 @@ final class NativeMenuBuilder {
         menu.addItem(.separator())
         menu.addItem(commandItem(L10n.t("学习 Markdown…"), "learnMarkdown"))
         menu.addItem(commandItem(L10n.t("安装可选字体…"), "installOptionalFonts"))
+        menu.addItem(commandItem(L10n.t("代码格式化器…"), "codeFormatterManager"))
         menu.addItem(.separator())
         menu.addItem(commandItem(L10n.t("在线帮助"), "openHelp"))
         return menu
@@ -408,7 +409,7 @@ final class MenuRouter: NSObject, NSMenuItemValidation, NSMenuDelegate {
         "new", "newPlainText", "newWindow", "open", "openInNewWindow", "openFolder",
         "restoreClosedTab",
         "recoverUnsavedFiles", "showPreferences", "showAbout",
-        "openWelcome", "openChangelog", "showShortcuts", "installOptionalFonts", "checkForUpdates", "openHelp",
+        "openWelcome", "openChangelog", "showShortcuts", "installOptionalFonts", "codeFormatterManager", "checkForUpdates", "openHelp",
         "learnMarkdown",
         "openSampleAlert", "openSampleYamlBasic", "openSampleYamlAdvanced",
         "toggleFollowSystemTheme", "toggleCodeHighlight",
@@ -635,6 +636,8 @@ final class MenuRouter: NSObject, NSMenuItemValidation, NSMenuDelegate {
             AppWindowManager.shared.showThemeSettings()
         case "installOptionalFonts":
             AppWindowManager.shared.showOptionalFonts()
+        case "codeFormatterManager":
+            AppWindowManager.shared.showCodeFormatterManager()
         case "checkForUpdates":
             AppWindowManager.shared.checkForUpdates()
         case "toggleFollowSystemTheme":
@@ -957,6 +960,8 @@ extension EditorSession {
         case "deleteMermaid": deleteSelectedMermaid()
         case "declareCodeLanguage": declareCodeBlockLanguage()
         case "copyCodeBlock": copyEntireCodeBlock()
+        case "formatCodeBlock": execute("formatCodeBlock")
+        case "normalizeInlineCode": execute("normalizeInlineCode")
         case "editMath": editMath()
         case "setMathNumber": setMathNumber()
         case "convertMath": execute("convertMath")

@@ -48,21 +48,39 @@ extension EditorSession {
         alert.addButton(withTitle: L10n.t("确定"))
         alert.addButton(withTitle: L10n.t("取消"))
 
-        let combo = NSComboBox()
-        combo.frame = NSRect(x: 0, y: 0, width: 320, height: 26)
-        combo.isEditable = true
-        combo.numberOfVisibleItems = 12
-        combo.addItems(withObjectValues: [L10n.t("未指定")] + CodeBlockLanguageCatalog.commonLanguages)
-        combo.stringValue = initialLanguage.isEmpty ? L10n.t("未指定") : initialLanguage
-        alert.accessoryView = combo
-        alert.window.initialFirstResponder = combo
+        let languagePopup = NSPopUpButton(frame: NSRect(x: 0, y: 32, width: 360, height: 28))
+        languagePopup.addItems(withTitles: [L10n.t("未指定")] + CodeBlockLanguageCatalog.commonLanguages)
+
+        let customLanguageField = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 26))
+        customLanguageField.placeholderString = L10n.t("自定义语言（可选）")
+
+        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 60))
+        accessory.addSubview(languagePopup)
+        accessory.addSubview(customLanguageField)
+        languagePopup.autoresizingMask = [.width]
+        customLanguageField.autoresizingMask = [.width]
+
+        if let initialLanguage = CodeBlockLanguageCatalog.commonLanguages.first(where: {
+            $0.caseInsensitiveCompare(initialLanguage) == .orderedSame
+        }) {
+            languagePopup.selectItem(withTitle: initialLanguage)
+        } else if !initialLanguage.isEmpty {
+            customLanguageField.stringValue = initialLanguage
+        } else {
+            languagePopup.selectItem(withTitle: L10n.t("未指定"))
+        }
+
+        alert.accessoryView = accessory
+        alert.window.initialFirstResponder = languagePopup
 
         alert.beginSheetModal(for: window) { response in
             guard response == .alertFirstButtonReturn else {
                 completion(nil)
                 return
             }
-            let normalized = CodeBlockLanguageCatalog.normalized(combo.stringValue)
+            let customLanguage = CodeBlockLanguageCatalog.normalized(customLanguageField.stringValue)
+            let popupLanguage = CodeBlockLanguageCatalog.normalized(languagePopup.titleOfSelectedItem ?? "")
+            let normalized = customLanguage.isEmpty ? popupLanguage : customLanguage
             completion(normalized == L10n.t("未指定") ? "" : normalized)
         }
     }

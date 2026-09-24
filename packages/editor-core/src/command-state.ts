@@ -1,5 +1,6 @@
 import type { EditorCommandState } from './editor-state'
 import type { DocumentType } from './document-mode'
+import { isFormatterSupportedLanguage } from './code-formatter'
 
 export type EditorActionState = { enabled: boolean; checked: boolean }
 export type EditorActions = Record<string, EditorActionState>
@@ -50,6 +51,8 @@ export function resolveEditorActions(state: Partial<EditorCommandState>, context
   add('resetFootnoteLabel clearFootnoteReferences deleteFootnote', editing && !!state.footnoteDefinitionLabel)
   add('goToFootnoteReference', visual && !!state.footnoteDefinitionLabel)
   add('setCodeBlockLanguage setCodeBlockLanguageAt', editing && !!state.codeBlock)
+  add('formatCodeBlock', editing && !!state.codeBlock && isFormatterSupportedLanguage(state.codeBlockLanguage))
+  add('normalizeInlineCode', editing && !!state.code && !!state.hasSelection)
   add('insertCodeBlockWithLanguage', block)
   add('exitCode', editing && !!(state.codeBlock || state.frontMatter))
   add('copyCodeBlock', visual && !!(state.codeBlock || state.frontMatter) && state.codeBlockText != null)

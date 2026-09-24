@@ -8,7 +8,7 @@ trap 'rm -rf "$BUILD"' EXIT
   exit 1
 }
 cp "$ROOT/script/tests/CodeBlockLanguageCatalogTest.swift" "$BUILD/main.swift"
-DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
+DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}" \
   CLANG_MODULE_CACHE_PATH="$BUILD/cache" \
   xcrun swiftc \
   "$ROOT/Sources/MarkLeaf/Services/CodeBlockLanguageCatalog.swift" \

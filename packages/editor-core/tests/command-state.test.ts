@@ -50,4 +50,24 @@ describe('shared command availability', () => {
     expect(getEditorSemanticContext({ mathBlock: true, codeBlock: true })).toBe('math')
     expect(getEditorSemanticContext({ inTable: true }, true)).toBe('ordinaryBlock')
   })
+
+  it('enables block formatting only for editable code blocks with supported languages', () => {
+    const actions = resolveEditorActions(
+      { codeBlock: true, codeBlockLanguage: 'ts' },
+      { readOnly: false },
+    )
+    expect(actions.formatCodeBlock).toEqual({ enabled: true, checked: false })
+
+    for (const state of [
+      { codeBlock: true, codeBlockLanguage: 'brainfuck' },
+      { codeBlock: true, codeBlockLanguage: null },
+      { codeBlock: false, codeBlockLanguage: 'ts' },
+    ]) {
+      expect(resolveEditorActions(state, { readOnly: false }).formatCodeBlock?.enabled).toBe(false)
+    }
+    expect(resolveEditorActions(
+      { codeBlock: true, codeBlockLanguage: 'ts' },
+      { readOnly: true },
+    ).formatCodeBlock?.enabled).toBe(false)
+  })
 })

@@ -392,6 +392,16 @@ final class EditorWebContainerView: NSView, WKNavigationDelegate {
         let configuration = WKSnapshotConfiguration()
         configuration.afterScreenUpdates = true
         let target = session?.themeBackgroundColor ?? .windowBackgroundColor
+        // A newly created session can resolve its saved theme after the fallback
+        // cover is installed. Repaint that cover before snapshot validation;
+        // otherwise the validator compares WebKit pixels with a stale fallback
+        // color and delays reveal until the 1-second timeout.
+        wantsLayer = true
+        layer?.backgroundColor = target.cgColor
+        reloadCoverView?.wantsLayer = true
+        reloadCoverView?.layer?.backgroundColor = target.cgColor
+        webView.underPageBackgroundColor = target
+        webView.window?.backgroundColor = target
         let startedAt = Date()
         var stableReadyCount = 0
 

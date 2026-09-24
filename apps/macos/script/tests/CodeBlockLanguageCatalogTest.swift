@@ -12,6 +12,10 @@ expect(CodeBlockLanguageCatalog.commonLanguages.prefix(6) == [
 ], "common language list should start with the agreed platform-neutral choices")
 expect(CodeBlockLanguageCatalog.commonLanguages.contains("python"), "python should be available")
 expect(CodeBlockLanguageCatalog.commonLanguages.contains("typescript"), "typescript should be available")
+expect(
+    CodeBlockLanguageCatalog.commonLanguages.filter { $0 == "verilog" }.count == 1,
+    "verilog should be available exactly once"
+)
 expect(CodeBlockLanguageCatalog.commonLanguages.contains("mermaid"), "mermaid should be available")
 expect(CodeBlockLanguageCatalog.normalized("  swift \n") == "swift", "selection should trim whitespace")
 expect(CodeBlockLanguageCatalog.normalized("   ") == "", "blank selection should mean unspecified")

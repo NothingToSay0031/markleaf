@@ -646,6 +646,38 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         tabBarController?.reload()
     }
 
+    @discardableResult
+    func openRecoverySnapshot(_ snapshot: RecoverySnapshot) -> Bool {
+        guard let windowSession else { return false }
+        let fileURL = snapshot.documentPath.map(URL.init(fileURLWithPath:))
+        let untitledSequence = windowSession.tabStore.nextUntitledSequence()
+        let title = snapshot.displayName
+            ?? fileURL?.lastPathComponent
+            ?? "\(L10n.t("未命名")) \(untitledSequence ?? 1)"
+        let settings = SettingsService.shared.settings
+        let tab = DocumentTab(
+            path: snapshot.documentPath,
+            title: title,
+            encoding: settings.defaultEncoding,
+            newLine: DocumentNewLinePolicy.style(from: settings.newLineStyle).rawValue
+        )
+        tab.isDirty = true
+        windowSession.tabStore.append(tab)
+        let session = ensureEditor(for: tab)
+        session.openInitialDocument(
+            markdown: snapshot.markdown,
+            fileURL: fileURL,
+            readOnly: false,
+            encoding: settings.defaultEncoding,
+            documentKind: NewDocumentKind.from(fileExtension: fileURL?.pathExtension),
+            initialDirty: true,
+            selection: nil
+        )
+        activateTab(tab.tabID, animated: true)
+        tabBarController?.reload()
+        return true
+    }
+
     func activateTab(_ id: DocumentTabID, animated: Bool) {
         guard let windowSession, windowSession.tabStore.tab(withID: id) != nil else { return }
         let previous = windowSession.tabStore.activeTabID
@@ -958,6 +990,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             tab.title = url.lastPathComponent
             tab.lastError = nil
             self.reloadTabBar()
+        }
+        session.onThemeChanged = { [weak self, weak session] in
+            guard let session else { return }
+            self?.applyWindowTitle()
+            AppWindowManager.shared.refreshThemeSettings()
+            AppWindowManager.shared.syncPreferencesActiveTheme(session.currentThemeId)
         }
         session.onRecoveryWriteFailure = { [weak self, weak windowSession, weak session] in
             guard let self, let windowSession, let session,

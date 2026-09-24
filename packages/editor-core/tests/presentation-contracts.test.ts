@@ -21,6 +21,11 @@ it('keeps wide tables inside the document width and wraps cell content', () => {
   expect(css).toMatch(/\.markleaf-document th,\s*\n\.markleaf-document td\s*\{[^}]*overflow-wrap:\s*anywhere/s)
 })
 
+it('paints selected table cells with a themeable overlay', () => {
+  const css = readFileSync(resolve(import.meta.dirname, '../../styles/base.css'), 'utf8')
+  expect(css).toMatch(/\.ProseMirror (?:td|th)\.selectedCell\s*\{[^}]*background-color:/s)
+})
+
 it('assigns nonempty unique anchors when titles and generated suffixes collide', () => {
   document.body.innerHTML = '<h1>Title</h1><h2>Title</h2><h3>Title-1</h3><h6>???</h6>'
   assignHeadingAnchors(document.body)

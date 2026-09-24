@@ -182,6 +182,16 @@ extension EditorSession {
             addEnabledCommand(menu, L10n.t("拷贝"), "copy", enabled: hasSelection)
             addFormatCommand(menu, L10n.t("全选"), "selectAll")
         } else {
+            if editorCommandEnabled("normalizeInlineCode") {
+                addFormatCommand(
+                    menu,
+                    L10n.t("整理行内代码"),
+                    "normalizeInlineCode",
+                    "f",
+                    [.shift, .option]
+                )
+                menu.addItem(.separator())
+            }
             addHistoryCommands(menu)
             menu.addItem(.separator())
             addClipboardCommands(menu)
@@ -445,6 +455,18 @@ extension EditorSession {
     }
 
     private func addCodeBlockCommands(to menu: NSMenu, state: EditorContextMenuState) {
+        // Keep the item visible even when the current language has no formatter;
+        // a hidden command looks like the feature disappeared entirely.
+        let formatItem = menuItem(
+            L10n.t("格式化代码块"),
+            #selector(handleCommand(_:)),
+            key: "f",
+            mask: [.shift, .option]
+        )
+        formatItem.representedObject = "formatCodeBlock"
+        formatItem.isEnabled = editorCommandEnabled("formatCodeBlock")
+        applyShortcut(to: formatItem, command: "formatCodeBlock")
+        menu.addItem(formatItem)
         if EditorMenuPolicy.allows(.declareCodeLanguage, state: state) {
             addFormatCommand(menu, L10n.t("声明代码语言…"), "declareCodeLanguage")
         }
@@ -453,8 +475,14 @@ extension EditorSession {
         }
     }
 
-    private func addFormatCommand(_ menu: NSMenu, _ title: String, _ command: String, _ key: String = "") {
-        let item = menuItem(title, #selector(handleCommand(_:)), key: key)
+    private func addFormatCommand(
+        _ menu: NSMenu,
+        _ title: String,
+        _ command: String,
+        _ key: String = "",
+        _ mask: NSEvent.ModifierFlags = [.command]
+    ) {
+        let item = menuItem(title, #selector(handleCommand(_:)), key: key, mask: mask)
         item.representedObject = command
         item.isEnabled = editorCommandEnabled(command)
         applyShortcut(to: item, command: command)

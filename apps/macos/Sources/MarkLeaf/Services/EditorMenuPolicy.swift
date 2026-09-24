@@ -19,6 +19,8 @@ enum EditorNativeCommand: Equatable {
     case deleteMermaid
     case declareCodeLanguage
     case copyCodeBlock
+    case formatCodeBlock
+    case normalizeInlineCode
     case goToFootnoteReference
     case resetFootnoteNumber
     case clearFootnoteReferences
@@ -45,6 +47,8 @@ enum EditorMenuPolicy {
         case .deleteMermaid: identifier = "deleteMermaid"
         case .declareCodeLanguage: identifier = "setCodeBlockLanguage"
         case .copyCodeBlock: identifier = "copyCodeBlock"
+        case .formatCodeBlock: identifier = "formatCodeBlock"
+        case .normalizeInlineCode: identifier = "normalizeInlineCode"
         case .goToFootnoteReference: identifier = "goToFootnoteReference"
         case .resetFootnoteNumber: identifier = "resetFootnoteLabel"
         case .clearFootnoteReferences: identifier = "clearFootnoteReferences"

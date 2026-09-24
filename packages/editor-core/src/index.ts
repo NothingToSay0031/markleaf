@@ -27,6 +27,7 @@ export * from './editor-state'
 export * from './command-state'
 export * from './document-mode'
 export * from './markdown-underline'
+export * from './code-formatter'
 
 // ---- 源码视图 ----
 export * from './source-editor'

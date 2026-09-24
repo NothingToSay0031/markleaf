@@ -56,6 +56,8 @@ final class FontSettingsWindowController: NSWindowController, NSTextFieldDelegat
         ])
         form.rowSpacing = 12
         form.columnSpacing = 12
+        form.yPlacement = .center
+        form.rowAlignment = .none
         let cancel = NSButton(title: L10n.t("取消"), target: self, action: #selector(cancelAction))
         let ok = NSButton(title: L10n.t("确定"), target: self, action: #selector(okAction))
         ok.keyEquivalent = "\r"

@@ -36,9 +36,11 @@ import {
   setBlockHandleVisible,
   setBlockTypeLabels,
   setCodeBlockControlHandlers,
+  setExternalCodeFormatter,
   setEditorSharedStrings,
   restoreVisualSelection,
   type VisualSelectionSnapshot,
+  type CodeFormatResult,
   collectTopLevelReadingBlocks,
   isReadingAnchorInput,
   normalizeReadingAnchor,
@@ -97,6 +99,8 @@ let compositionChanged = false
 let suppressUpdate = false
 let lastOutlinePosition: number | null | undefined
 let outlineTimer = 0
+const pendingExternalCodeFormats = new Map<string, (result: CodeFormatResult) => void>()
+let externalFormatterLanguages: string[] = []
 let sourceEditor: SourceEditor | null = null
 let sourceMode = false
 let sourceScrollbarOverlay: SourceScrollbarOverlay | null = null
@@ -112,6 +116,24 @@ let editorTypewriterMode = false
 let autoConvertUnsafeEmphasis = true
 
 setImageResourceResolver(nativeImageResources)
+setExternalCodeFormatter({
+  languages: externalFormatterLanguages,
+  supportsSelectionLineRanges: true,
+  selectionLineRangeLanguages: ['java'],
+  format: (code, language, selection) => new Promise((resolve, reject) => {
+    const requestId = crypto.randomUUID()
+    const timeout = window.setTimeout(() => {
+      pendingExternalCodeFormats.delete(requestId)
+      reject(new Error('formatter host unavailable'))
+    }, 15000)
+    pendingExternalCodeFormats.set(requestId, result => {
+      window.clearTimeout(timeout)
+      resolve(result)
+    })
+    send('codeFormatRequested', selection ? { code, language, ...selection } : { code, language }, requestId)
+  }),
+})
+
 const editorCreationOptions = {
   themedVisualSelection: hostCapabilities.usesThemedVisualSelection,
   handlePaste: handleVisualEditorPaste,
@@ -390,7 +412,11 @@ function applyFindBarLocalization(loc: Record<string, string>): void {
   demoteHeadingButton.ariaLabel = loc.formatDemoteHeading ?? 'Demote heading'
 }
 
-function send(type: Parameters<typeof postToHost>[0]['type'], payload?: unknown, requestId?: string): void {
+function send(
+  type: Parameters<typeof postToHost>[0]['type'],
+  payload?: unknown,
+  requestId?: string,
+): void {
   postToHost({
     protocolVersion,
     type,
@@ -1215,7 +1241,7 @@ async function handleMessage(value: unknown): Promise<void> {
 
   // 文档尚未加载时，宿主的会话 documentId 还是随机占位值，与前端不一致；
   // 此时 applyStyles/setAutoHideScrollbar 等文档无关的偏好推送必须放行。
-    if (message.type !== 'loadDocument' && message.type !== 'setDocumentType' && message.type !== 'applyStyles' && message.type !== 'localizeFindBar' && message.type !== 'refreshOutline'
+    if (message.type !== 'loadDocument' && message.type !== 'setDocumentType' && message.type !== 'applyStyles' && message.type !== 'localizeFindBar' && message.type !== 'refreshOutline' && message.type !== 'setCodeFormatterSettings'
       && documentLoaded && message.documentId !== documentId) {
     return
   }
@@ -1441,6 +1467,38 @@ async function handleMessage(value: unknown): Promise<void> {
       if (message.requestId) send('commandResult', { success: true }, message.requestId)
       break
     }
+    case 'setCodeFormatterSettings': {
+      const payload = message.payload as { languages?: unknown }
+      externalFormatterLanguages = Array.isArray(payload?.languages)
+        ? payload.languages.filter((language): language is string => typeof language === 'string')
+        : []
+      setExternalCodeFormatter({
+        languages: externalFormatterLanguages,
+        supportsSelectionLineRanges: true,
+        selectionLineRangeLanguages: ['java'],
+        format: (code, language, selection) => new Promise((resolve, reject) => {
+          const requestId = crypto.randomUUID()
+          const timeout = window.setTimeout(() => {
+            pendingExternalCodeFormats.delete(requestId)
+            reject(new Error('formatter host unavailable'))
+          }, 15000)
+          pendingExternalCodeFormats.set(requestId, result => {
+            window.clearTimeout(timeout)
+            resolve(result)
+          })
+          send('codeFormatRequested', selection ? { code, language, ...selection } : { code, language }, requestId)
+        }),
+      })
+      sendCommandState()
+      if (message.requestId) send('commandResult', { success: true }, message.requestId)
+      break
+    }
+    case 'codeFormatResult': {
+      const payload = message.payload as CodeFormatResult
+      if (message.requestId) pendingExternalCodeFormats.get(message.requestId)?.(payload)
+      pendingExternalCodeFormats.delete(message.requestId ?? '')
+      break
+    }
     case 'command': {
       const payload = message.payload as {
         command?: unknown
@@ -1476,6 +1534,9 @@ async function handleMessage(value: unknown): Promise<void> {
           hideFormatMenu()
           if (message.requestId) send('commandResult', { success: true }, message.requestId)
           break
+        }
+        if (payload.command === 'formatCodeBlock' && contextMenuSelection) {
+          editor.commands.setTextSelection(contextMenuSelection)
         }
         if (payload.command === 'setStyle') {
           applyMarkleafStyle(typeof payload.text === 'string' ? payload.text : 'serif')

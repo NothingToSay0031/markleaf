@@ -5,12 +5,19 @@ import AppKit
 /// WKWebView 的 `afterScreenUpdates` 回调仍可能返回样式注入前的白色旧帧；
 /// 只有抽样像素达到主题底色时，才允许移除加载遮罩。
 enum ThemeFrameReadinessPolicy {
-    static let tolerance: CGFloat = 0.035
+    /// WKWebView snapshots can pass colors through the display profile. Keep the
+    /// check tight enough to reject white/stale pages, but tolerant of the small
+    /// drift produced around dark theme backgrounds.
+    static let tolerance: CGFloat = 0.05
     static let timeout: TimeInterval = 1.0
 
     static func isReady(pixel: NSColor, target: NSColor) -> Bool {
         guard let sample = pixel.usingColorSpace(.sRGB),
               let expected = target.usingColorSpace(.sRGB) else { return false }
+        // The editor WebView intentionally disables its own background. Fully
+        // transparent snapshot pixels therefore expose the themed native backing
+        // (not a stale white page) and are safe to reveal immediately.
+        if sample.alphaComponent <= 0.02 { return true }
         guard sample.alphaComponent > 0.98 else { return false }
 
         let differences = [

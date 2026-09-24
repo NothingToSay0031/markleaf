@@ -105,6 +105,12 @@ if ! grep -Fq 'ThemeFrameReadinessPolicy' "$CONTAINER"; then
   exit 1
 fi
 
+target_refresh_line="$(awk -v snapshot="$snapshot_line" 'NR > snapshot && /reloadCoverView\?\.layer\?\.backgroundColor = target\.cgColor/ { print NR; exit }' "$CONTAINER")"
+if [ -z "$target_refresh_line" ] || [ "$target_refresh_line" -le "$snapshot_line" ]; then
+  echo "FAIL: reveal must repaint the cover with the resolved theme target before snapshot validation" >&2
+  exit 1
+fi
+
 system_line="$(grep -n 'private func applySystemAppearance' "$SESSION" | head -1 | cut -d: -f1)"
 if ! grep -Fq 'window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)' "$SESSION" \
    || ! grep -Fq 'window.backgroundColor = self.themeBackgroundColor ?? .windowBackgroundColor' "$SESSION"; then

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createEditor, exportEditorSelection } from '../src/editor'
+import { CellSelection } from '@tiptap/pm/tables'
 
 describe('selection export semantics', () => {
   it('keeps inline and display formula delimiters in plain text copy', () => {
@@ -30,6 +31,34 @@ describe('selection export semantics', () => {
       expect(exported.text).toContain('Name\tCount')
       expect(exported.text).toContain('Apples\t3')
       expect(exported.text).toContain('Pears\t2')
+    } finally {
+      editor.destroy()
+      mount.remove()
+    }
+  })
+
+  it('exports every selected cell in a CellSelection', () => {
+    const mount = document.createElement('main')
+    document.body.append(mount)
+    const markdown = '| a | b | c |\n| --- | --- | --- |\n| 1 | 2 | 3 |'
+    const editor = createEditor(mount, markdown)
+    try {
+      const cellPositions: number[] = []
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name !== 'tableCell' && node.type.name !== 'tableHeader') return true
+        cellPositions.push(pos)
+        return false
+      })
+      expect(cellPositions.length).toBe(6)
+
+      editor.view.dispatch(editor.state.tr.setSelection(
+        CellSelection.create(editor.state.doc, cellPositions[0]!, cellPositions[2]!),
+      ))
+      const exported = exportEditorSelection(editor)
+      expect(exported.text).toBe('a\tb\tc')
+      expect(exported.markdown).toContain('| a   |')
+      expect(exported.markdown).toContain('| b   |')
+      expect(exported.markdown).toContain('| c   |')
     } finally {
       editor.destroy()
       mount.remove()

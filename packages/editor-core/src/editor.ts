@@ -9,7 +9,7 @@ import { Selection, TextSelection } from '@tiptap/pm/state'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { DOMSerializer, type Mark as ProseMirrorMark, type NodeType } from '@tiptap/pm/model'
-import { TableMap } from '@tiptap/pm/tables'
+import { CellSelection, TableMap, cellAround } from '@tiptap/pm/tables'
 import Image from '@tiptap/extension-image'
 import Link from '@tiptap/extension-link'
 import { Table, TableRow, TableHeader, TableCell, renderTableToMarkdown } from '@tiptap/extension-table'
@@ -27,6 +27,13 @@ import { syntaxTree } from '@codemirror/language'
 import { EditorState as CodeMirrorEditorState } from '@codemirror/state'
 import { parseDocument } from 'yaml'
 import { MathBlock, MathInline, mathNumberFromLatex } from './math'
+import {
+  formatCode,
+  isFormatterSupportedLanguage,
+  normalizeInlineCodeWhitespace,
+  supportsExternalFormatterSelectionLineRanges,
+  type CodeFormatSelectionRange,
+} from './code-formatter'
 import katex from 'katex'
 import { Mermaid, rerenderMermaidElement, rerenderMermaidElements, setMermaidMarkdownCodeFence } from './mermaid'
 import { sharedEditorStrings, type SharedEditorStrings } from './shared-editor-strings'
@@ -973,6 +980,36 @@ const CodeBlockSpellcheck = Extension.create({
   },
 })
 
+function runCodeFormattingShortcut(editor: Editor): boolean {
+  if (editor.isEditable && editor.isActive('code') && !editor.state.selection.empty) {
+    return normalizeCurrentInlineCode(editor)
+  }
+  const current = getCurrentCodeBlock(editor)
+  const hasCodeSelection = !editor.state.selection.empty
+    && editor.state.selection.$from.sameParent(editor.state.selection.$to)
+    && editor.state.selection.$from.parent.type.name === 'codeBlock'
+  if (editor.isEditable && current && hasCodeSelection && isFormatterSupportedLanguage(current.language)) {
+    void formatSelectedCodeBlock(editor)
+    return true
+  }
+  if (!editor.isEditable || !current || !isFormatterSupportedLanguage(current.language)) {
+    return false
+  }
+  void formatCurrentCodeBlock(editor)
+  return true
+}
+
+const CodeFormattingShortcuts = Extension.create({
+  name: 'markleafCodeFormattingShortcuts',
+
+  addKeyboardShortcuts() {
+    return {
+      'Shift-Alt-f': () => runCodeFormattingShortcut(this.editor),
+      'Shift-Alt-F': () => runCodeFormattingShortcut(this.editor),
+    }
+  },
+})
+
 /// 可视化编辑器中的 Tab：列表项执行结构化缩进，普通文本块插入两个空格。
 /// 表格仍交给表格扩展处理，以保留单元格间跳转行为。
 const VisualIndent = Extension.create({
@@ -1084,7 +1121,8 @@ const themedSelectionKey = new PluginKey('markleaf-themed-selection')
 const selectionHighlightName = 'markleaf-selection'
 
 type SelectionHighlightRegistry = { highlights?: Map<string, unknown> }
-type SelectionHighlightConstructor = new (...ranges: Range[]) => unknown
+type SelectionHighlightInstance = { clear: () => void; add: (range: Range) => unknown }
+type SelectionHighlightConstructor = new (...ranges: Range[]) => SelectionHighlightInstance
 
 function selectionHighlightSupport(targetWindow: Window | null): {
   registry: SelectionHighlightRegistry['highlights']
@@ -1114,29 +1152,50 @@ const ThemedSelection = Extension.create({
         const highlightRegistry = selectionHighlight?.registry
         const highlightCtor = selectionHighlight?.ctor
         let highlightRange: Range | null = null
+        const selectionHighlightInstance = highlightCtor ? new highlightCtor() : null
+        if (selectionHighlightInstance && highlightRegistry) {
+          // Register once for the editor's lifetime. During a drag we mutate
+          // the Highlight's range; deleting/re-registering it exposes empty
+          // rendering frames and makes the selection flicker.
+          highlightRegistry.set(selectionHighlightName, selectionHighlightInstance)
+        }
 
         const clearSelectionHighlight = () => {
-          highlightRegistry?.delete(selectionHighlightName)
+          selectionHighlightInstance?.clear()
           highlightRange = null
         }
+        const isSingleCellTextSelection = () => {
+          const selection = view.state.selection
+          if (!(selection instanceof TextSelection)) return false
+          const anchorCell = cellAround(selection.$anchor)
+          const headCell = cellAround(selection.$head)
+          return !!anchorCell && !!headCell && anchorCell.pos === headCell.pos
+        }
         const paintSelectionHighlight = () => {
-          highlightRegistry?.delete(selectionHighlightName)
-          highlightRange = null
           const { from, to, empty } = view.state.selection
-          if (!(view.state.selection instanceof TextSelection) || empty || from === to) return
+          if (view.state.selection instanceof CellSelection) {
+            clearSelectionHighlight()
+            clearDomSelection(view.dom.ownerDocument)
+            window.setTimeout(() => {
+              clearDomSelection(view.dom.ownerDocument)
+            }, 0)
+            return
+          }
+          if (!(view.state.selection instanceof TextSelection) || empty || from === to) {
+            clearSelectionHighlight()
+            return
+          }
           try {
             const start = view.domAtPos(from)
             const end = view.domAtPos(to)
-            highlightRange = view.dom.ownerDocument.createRange()
-            highlightRange.setStart(start.node, start.offset)
-            highlightRange.setEnd(end.node, end.offset)
-            highlightRegistry?.set(
-              selectionHighlightName,
-              new highlightCtor!(highlightRange),
-            )
+            const nextRange = view.dom.ownerDocument.createRange()
+            nextRange.setStart(start.node, start.offset)
+            nextRange.setEnd(end.node, end.offset)
+            selectionHighlightInstance?.clear()
+            selectionHighlightInstance?.add(nextRange)
+            highlightRange = nextRange
           } catch {
-            highlightRange = null
-            highlightRegistry?.delete(selectionHighlightName)
+            clearSelectionHighlight()
           }
         }
         paintSelectionHighlight()
@@ -1154,6 +1213,11 @@ const ThemedSelection = Extension.create({
 
         mount.addEventListener('mousedown', handleBackgroundMouseDown)
         const handleMouseUp = () => {
+          if (view.state.selection instanceof CellSelection) {
+            clearDomSelection(view.dom.ownerDocument)
+            return
+          }
+          if (isSingleCellTextSelection()) return
           // Async autoscroll and WebKit selection tracking can leave the DOM
           // selection at an older endpoint. At mouse-up, normalize both PM and
           // DOM to the same range so upward drags can reliably shrink it.
@@ -1180,10 +1244,11 @@ const ThemedSelection = Extension.create({
         }
         view.dom.ownerDocument.addEventListener('mouseup', handleMouseUp, true)
         return {
-          destroy() {
-            mount.removeEventListener('mousedown', handleBackgroundMouseDown)
+            destroy() {
+              mount.removeEventListener('mousedown', handleBackgroundMouseDown)
             view.dom.ownerDocument.removeEventListener('mouseup', handleMouseUp, true)
             clearSelectionHighlight()
+              highlightRegistry?.delete(selectionHighlightName)
           },
           update(view, previousState) {
             if (previousState.doc !== view.state.doc
@@ -1193,9 +1258,9 @@ const ThemedSelection = Extension.create({
           },
         }
       },
-      props: {
-        decorations(state) {
-          // CSS Custom Highlight is O(1) DOM state for a giant selection and
+        props: {
+          decorations(state) {
+            // CSS Custom Highlight is O(1) DOM state for a giant selection and
           // avoids wrapping thousands of nodes while the user drags.
           if (selectionHighlightSupport(typeof window === 'undefined' ? null : window)) {
             return DecorationSet.empty
@@ -2291,10 +2356,18 @@ const CodeBlockControls = Extension.create({
           const decorations: Decoration[] = []
           state.doc.descendants((node, pos) => {
             if (node.type.name !== 'codeBlock') return
-            decorations.push(Decoration.widget(pos + 1, () => createCodeBlockControls(editor, pos), {
-              side: -1,
-              ignoreSelection: true,
-            }))
+            decorations.push(Decoration.widget(
+              pos + 1,
+              (_view, getPos) => createCodeBlockControls(editor, () => {
+                try {
+                  const widgetPosition = getPos()
+                  return typeof widgetPosition === 'number' ? widgetPosition - 1 : null
+                } catch {
+                  return null
+                }
+              }),
+              { side: -1, ignoreSelection: true },
+            ))
           })
           return decorations.length > 0
             ? DecorationSet.create(state.doc, decorations)
@@ -2305,7 +2378,10 @@ const CodeBlockControls = Extension.create({
   },
 })
 
-function createCodeBlockControls(editor: Editor, position: number): HTMLDivElement {
+function createCodeBlockControls(
+  editor: Editor,
+  getPosition: () => number | null,
+): HTMLDivElement {
   const controls = document.createElement('div')
   controls.className = 'markleaf-code-block-controls'
   controls.contentEditable = 'false'
@@ -2331,19 +2407,24 @@ function createCodeBlockControls(editor: Editor, position: number): HTMLDivEleme
 
   copy.addEventListener('click', (event) => {
     stopMouseSelection(event)
+    const position = getPosition()
+    if (position === null) return
     const node = editor.state.doc.nodeAt(position)
     if (node?.type.name === 'codeBlock') copyCodeBlockRequested?.(node.textContent)
   })
   language.addEventListener('click', (event) => {
     stopMouseSelection(event)
     if (!editor.isEditable) return
+    const position = getPosition()
+    if (position === null) return
     const node = editor.state.doc.nodeAt(position)
     if (node?.type.name !== 'codeBlock') return
     const value = typeof node.attrs.language === 'string' ? node.attrs.language : ''
     codeBlockLanguageRequested?.(position, value)
   })
 
-  const node = editor.state.doc.nodeAt(position)
+  const initialPosition = getPosition()
+  const node = initialPosition === null ? null : editor.state.doc.nodeAt(initialPosition)
   language.textContent = node?.type.name === 'codeBlock' && typeof node.attrs.language === 'string'
     ? node.attrs.language
     : ''
@@ -3118,16 +3199,25 @@ function normalizeCodeLanguage(value: unknown): string {
     ts: 'typescript',
     tsx: 'typescript',
     py: 'python',
+    rb: 'ruby',
     sh: 'shell',
     bash: 'shell',
     zsh: 'shell',
     ps1: 'powershell',
     pwsh: 'powershell',
+    'c++': 'cpp',
+    cc: 'cpp',
     cs: 'csharp',
     'c#': 'csharp',
     cpp: 'cpp',
     cxx: 'cpp',
     hpp: 'cpp',
+    'objective-c': 'objectivec',
+    objc: 'objectivec',
+    m: 'objectivec',
+    mm: 'objectivec',
+    rs: 'rust',
+    sv: 'systemverilog',
     html: 'markup',
     htm: 'markup',
     xml: 'markup',
@@ -3136,6 +3226,10 @@ function normalizeCodeLanguage(value: unknown): string {
     tex: 'latex',
     yml: 'yaml',
   } as Record<string, string>)[language] ?? language
+}
+
+export function supportsCodeHighlighting(language: string): boolean {
+  return getCodeHighlightRules(normalizeCodeLanguage(language)) !== null
 }
 
 function highlightCode(text: string, language: string): CodeHighlightToken[] {
@@ -3332,8 +3426,35 @@ function getCodeHighlightRules(language: string): { pattern: RegExp; className: 
   if (language === 'python') {
     return [hashComment, string, keyword('and|as|assert|async|await|break|case|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|match|None|nonlocal|not|or|pass|raise|return|True|try|while|with|yield'), number, fn]
   }
-  if (['c', 'cpp', 'csharp', 'java', 'go', 'rust', 'php'].includes(language)) {
+  if (['c', 'cpp', 'csharp', 'java', 'go', 'rust', 'php', 'objectivec'].includes(language)) {
     return [comment, string, keyword('abstract|as|async|await|break|case|catch|class|const|continue|default|defer|do|else|enum|extends|false|finally|fn|for|foreach|func|if|implements|import|in|interface|match|namespace|new|null|package|private|protected|public|return|static|struct|switch|this|throw|trait|true|try|using|var|void|while'), type('bool|boolean|byte|char|decimal|double|float|int|long|short|string|uint|ulong|usize|i32|i64|u32|u64|String|Task'), number, fn]
+  }
+  if (language === 'swift') {
+    return [comment, string, keyword('actor|as|async|await|break|case|catch|class|continue|default|defer|deinit|do|else|enum|extension|fallthrough|false|for|func|guard|if|import|in|init|inout|is|let|nil|open|private|protocol|public|repeat|return|self|static|struct|subscript|super|switch|throw|throws|true|try|typealias|where|while|willSet|didSet'), type('Any|Bool|Character|Double|Float|Int|String|UInt'), number, fn]
+  }
+  if (language === 'kotlin') {
+    return [comment, string, keyword('abstract|as|break|by|catch|class|companion|const|constructor|continue|crossinline|data|do|else|enum|external|false|final|finally|for|fun|if|import|in|infix|init|inline|inner|interface|internal|is|lateinit|lazy|null|object|open|operator|out|override|package|private|protected|public|reified|return|sealed|super|suspend|this|throw|true|try|val|var|vararg|when|where|while'), type('Any|Boolean|Byte|Char|Double|Float|Int|List|Long|Map|Short|String'), number, fn]
+  }
+  if (language === 'ruby') {
+    return [
+      hashComment,
+      string,
+      { pattern: /:[A-Za-z_][\w!?]*/g, className: 'ml-code-string' },
+      keyword('BEGIN|END|alias|and|begin|break|case|class|def|defined?|do|else|elsif|end|ensure|false|for|if|in|module|next|nil|not|or|redo|rescue|retry|return|self|super|then|true|undef|unless|until|when|while|yield'),
+      { pattern: /@[A-Za-z_]\w*|@@[A-Za-z_]\w*|\$[A-Za-z_]\w*/g, className: 'ml-code-property' },
+      number,
+      fn,
+    ]
+  }
+  if (language === 'r') {
+    return [
+      hashComment,
+      string,
+      { pattern: /<-|->/g, className: 'ml-code-operator' },
+      keyword('break|else|for|function|if|in|Inf|library|NA|NaN|next|NULL|repeat|return|TRUE|FALSE|while'),
+      number,
+      fn,
+    ]
   }
   if (['json'].includes(language)) {
     return [{ pattern: /"(?:\\.|[^"\\])*"\s*(?=:)/g, className: 'ml-code-property' }, string, number, keyword('true|false|null')]
@@ -3345,7 +3466,12 @@ function getCodeHighlightRules(language: string): { pattern: RegExp; className: 
     return [comment, { pattern: /<\/?[A-Za-z][\w:-]*/g, className: 'ml-code-keyword' }, { pattern: /\s([A-Za-z_:][\w:.-]*)(?==)/g, className: 'ml-code-property' }, string]
   }
   if (['sql'].includes(language)) {
-    return [{ pattern: /--.*|\/\*[\s\S]*?\*\//g, className: 'ml-code-comment' }, string, keyword('ADD|ALTER|AND|AS|ASC|BY|CREATE|DELETE|DESC|DISTINCT|DROP|FROM|GROUP|HAVING|IN|INSERT|INTO|IS|JOIN|KEY|LEFT|LIKE|LIMIT|NOT|NULL|ON|OR|ORDER|PRIMARY|RIGHT|SELECT|SET|TABLE|UPDATE|VALUES|WHERE'), number]
+    return [
+      { pattern: /--.*|\/\*[\s\S]*?\*\//g, className: 'ml-code-comment' },
+      string,
+      { pattern: /\b(?:ADD|ALTER|AND|AS|ASC|BY|CREATE|DELETE|DESC|DISTINCT|DROP|FROM|GROUP|HAVING|IN|INSERT|INTO|IS|JOIN|KEY|LEFT|LIKE|LIMIT|NOT|NULL|ON|OR|ORDER|PRIMARY|RIGHT|SELECT|SET|TABLE|UPDATE|VALUES|WHERE)\b/gi, className: 'ml-code-keyword' },
+      number,
+    ]
   }
   if (['shell', 'powershell'].includes(language)) {
     return [hashComment, string, { pattern: /\b(?:cd|cp|curl|echo|git|grep|ls|mkdir|mv|npm|pnpm|rm|sed|ssh|sudo|tar|where|dotnet)\b/g, className: 'ml-code-keyword' }, { pattern: /--?[\w-]+/g, className: 'ml-code-property' }, number]
@@ -3379,6 +3505,45 @@ function getCodeHighlightRules(language: string): { pattern: RegExp; className: 
       { pattern: /\b(?:true|false|null|yes|no|on|off)\b/gi, className: 'ml-code-keyword' },
       { pattern: /\b[-+]?\d+(?:\.\d+)?\b/g, className: 'ml-code-number' },
       { pattern: /^\s*(-)(?=\s+)/gm, className: 'ml-code-operator' },
+    ]
+  }
+  if (language === 'toml') {
+    return [
+      { pattern: /#.*$/gm, className: 'ml-code-comment' },
+      { pattern: /"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\])*"|'(?:[^'])*'/g, className: 'ml-code-string' },
+      { pattern: /^\s*\[[A-Za-z0-9_.-]+\]\s*$/gm, className: 'ml-code-keyword' },
+      { pattern: /^\s*[A-Za-z0-9_.-]+(?=\s*=)/gm, className: 'ml-code-property' },
+      { pattern: /\b(?:true|false)\b/g, className: 'ml-code-keyword' },
+      { pattern: /\b[-+]?(?:\d+(?:\.\d+)*|\d+\.\d+)(?:_?\d)*\b/g, className: 'ml-code-number' },
+    ]
+  }
+  if (['verilog', 'systemverilog'].includes(language)) {
+    return [
+      { pattern: /\/\/.*|\/\*[\s\S]*?\*\//g, className: 'ml-code-comment' },
+      string,
+      {
+        pattern: /\b(?:always|always_comb|always_ff|assign|begin|bit|case|default|else|end|endcase|endgenerate|endmodule|generate|input|interface|logic|module|negedge|output|parameter|posedge|reg|return|struct|typedef|wire|while)\b/g,
+        className: 'ml-code-keyword',
+      },
+      { pattern: /\b(?:logic|reg|wire)\s*(?:\[[^\]]+\])?\s*(?=[A-Za-z_])/g, className: 'ml-code-type' },
+      number,
+    ]
+  }
+  if (language === 'ini') {
+    return [
+      { pattern: /^[;#].*$/gm, className: 'ml-code-comment' },
+      { pattern: /^\s*\[[^\]]+\]\s*$/gm, className: 'ml-code-keyword' },
+      { pattern: /^\s*[^=\n]+(?=\s*=)/gm, className: 'ml-code-property' },
+      { pattern: /\b(?:true|false|yes|no|on|off)\b/gi, className: 'ml-code-keyword' },
+      number,
+    ]
+  }
+  if (language === 'diff') {
+    return [
+      { pattern: /^diff .*|^index .*|^--- .*|^\+\+\+ .*/gm, className: 'ml-code-comment' },
+      { pattern: /^@@.*@@$/gm, className: 'ml-code-keyword' },
+      { pattern: /^\+[^\n]*/gm, className: 'ml-code-string' },
+      { pattern: /^-[^\n]*/gm, className: 'ml-code-operator' },
     ]
   }
   return null
@@ -3425,6 +3590,7 @@ const editorExtensions = [
   Caption,
   CodeBlockSpellcheck,
   CodeBlockControls,
+  CodeFormattingShortcuts,
   MermaidCodeBlockControls,
   CodeBlockHighlight,
   ExpandedSourceEditor,
@@ -3462,7 +3628,12 @@ export function createEditor(
   options: EditorCreationOptions = {},
 ): Editor {
   const extensions = editorExtensions.map(extension => {
-    if (options.externalHistory && extension.name === 'starterKit') return extension.configure({ undoRedo: false })
+    if (extension.name === 'starterKit') {
+      return extension.configure({
+        trailingNode: { notAfter: ['codeBlock'] },
+        ...(options.externalHistory ? { undoRedo: false } : {}),
+      })
+    }
     return extension
   })
   const editor = new Editor({
@@ -4633,6 +4804,27 @@ export function exportEditorSelection(editor: Editor): SelectionExport {
   }
   const selection = editor.state.selection
   if (selection.empty) return { text: '', markdown: '', html: '' }
+  if (selection instanceof CellSelection) {
+    const cellSlice = selection.content()
+    const container = document.createElement('div')
+    const table = document.createElement('table')
+    table.append(DOMSerializer.fromSchema(editor.schema).serializeFragment(cellSlice.content))
+    container.append(table)
+
+    const temporary = document.createElement('div')
+    temporary.append(table.cloneNode(true))
+    const selectionEditor = createEditor(temporary, container.innerHTML)
+    const markdown = getMarkdown(selectionEditor)
+    selectionEditor.destroy()
+
+    const text = Array.from(table.querySelectorAll('tr')).map((row) => (
+      Array.from(row.querySelectorAll('th,td'))
+        .map((cell) => (cell.textContent ?? '').replace(/\s*\n\s*/gu, ' ').trim())
+        .join('\t')
+    )).join('\n')
+
+    return { text, markdown, html: table.outerHTML }
+  }
   const slice = editor.state.doc.slice(selection.from, selection.to)
   const container = document.createElement('div')
   container.append(DOMSerializer.fromSchema(editor.schema).serializeFragment(slice.content))
@@ -5038,6 +5230,17 @@ export function executeEditorCommand(
     setCodeBlockLanguage: () => setCodeBlockLanguage(editor, text),
     setCodeBlockLanguageAt: () => setCodeBlockLanguageAt(editor, text),
     insertCodeBlockWithLanguage: () => insertCodeBlockWithLanguage(editor, text),
+    formatCodeBlock: () => {
+      const current = getCurrentCodeBlock(editor)
+      if (!editor.isEditable || !current || !isFormatterSupportedLanguage(current.language)) return false
+      if (!editor.state.selection.empty) {
+        void formatSelectedCodeBlock(editor)
+      } else {
+        void formatCurrentCodeBlock(editor)
+      }
+      return true
+    },
+    normalizeInlineCode: () => normalizeCurrentInlineCode(editor),
     editMath: () => expandSelectedMath(editor),
     editMermaid: () => expandSelectedMermaid(editor),
     updateMermaid: () => renderSelectedMermaidCodeBlock(editor) || updateMermaid(editor, text),
@@ -5773,6 +5976,349 @@ function setCodeBlockLanguage(editor: Editor, text?: string): boolean {
   }))
   restoreCodeBlockScrollPosition(scrollingElement, scrollTop, scrollLeft)
   return true
+}
+
+export async function formatCurrentCodeBlock(editor: Editor): Promise<boolean> {
+  const current = getCurrentCodeBlock(editor)
+  const language = current?.language
+  if (!editor.isEditable || !current || !isFormatterSupportedLanguage(language)) return false
+
+  const result = await formatCode(current.node.textContent, language ?? '')
+  const formatted = result.status === 'formatted' ? result.code.replace(/\n$/, '') : null
+  if (!formatted || formatted === current.node.textContent) return false
+
+  const { selection } = editor.state
+  const contentStart = current.pos + 1
+  const contentEnd = contentStart + current.node.textContent.length
+  const originalCode = current.node.textContent
+  const nextFrom = contentStart + mapOffsetAfterCodeFormatting(
+    originalCode,
+    formatted,
+    selection.from - contentStart,
+    selection.empty,
+  )
+  const nextTo = contentStart + mapOffsetAfterCodeFormatting(
+    originalCode,
+    formatted,
+    selection.to - contentStart,
+    selection.empty,
+  )
+  const transaction = editor.state.tr.replaceWith(
+    contentStart,
+    contentEnd,
+    editor.state.schema.text(formatted),
+  ).setMeta('skipTrailingNode', true)
+  transaction.setSelection(TextSelection.create(transaction.doc, nextFrom, nextTo))
+  const scrollingElement = document.scrollingElement
+  const scrollTop = scrollingElement?.scrollTop ?? 0
+  const scrollLeft = scrollingElement?.scrollLeft ?? 0
+  editor.view.dispatch(transaction.scrollIntoView())
+  restoreCodeBlockScrollPosition(scrollingElement, scrollTop, scrollLeft)
+  return true
+}
+
+function mapOffsetAfterCodeFormatting(
+  original: string,
+  formatted: string,
+  offset: number,
+  collapsed: boolean,
+): number {
+  const clampedOffset = Math.max(0, Math.min(offset, original.length))
+  if (formatted === original) return clampedOffset
+
+  let prefixLength = 0
+  const maxPrefixLength = Math.min(original.length, formatted.length)
+  while (
+    prefixLength < maxPrefixLength
+    && original[prefixLength] === formatted[prefixLength]
+  ) prefixLength += 1
+
+  let suffixLength = 0
+  const maxSuffixLength = Math.min(
+    original.length - prefixLength,
+    formatted.length - prefixLength,
+  )
+  while (
+    suffixLength < maxSuffixLength
+    && original[original.length - 1 - suffixLength] === formatted[formatted.length - 1 - suffixLength]
+  ) suffixLength += 1
+
+  if (clampedOffset <= prefixLength) return clampedOffset
+  const distanceFromEnd = original.length - clampedOffset
+  if (distanceFromEnd <= suffixLength) return formatted.length - distanceFromEnd
+
+  const changedOriginalLength = Math.max(0, original.length - prefixLength - suffixLength)
+  const changedFormattedLength = Math.max(0, formatted.length - prefixLength - suffixLength)
+  const changedOffset = Math.max(0, clampedOffset - prefixLength)
+  const mappedChangedOffset = collapsed
+    ? Math.round(changedOffset * (changedFormattedLength / Math.max(1, changedOriginalLength)))
+    : Math.floor(changedOffset * (changedFormattedLength / Math.max(1, changedOriginalLength)))
+  return Math.max(
+    prefixLength,
+    Math.min(formatted.length - suffixLength, prefixLength + mappedChangedOffset),
+  )
+}
+
+function commonLeadingWhitespace(source: string): string {
+  let prefix: string | null = null
+  for (const line of source.split('\n')) {
+    if (line.trim().length === 0) continue
+    const indent = line.match(/^[ \t]*/)?.[0] ?? ''
+    if (prefix === null) {
+      prefix = indent
+      continue
+    }
+    let length = 0
+    while (length < prefix.length && length < indent.length && prefix[length] === indent[length]) {
+      length += 1
+    }
+    prefix = prefix.slice(0, length)
+  }
+  return prefix ?? ''
+}
+
+export async function formatSelectedCodeBlock(editor: Editor): Promise<boolean> {
+  const { selection } = editor.state
+  const { $from, $to } = selection
+  if (!editor.isEditable || selection.empty || !$from.sameParent($to)) return false
+
+  const parent = $from.parent
+  if (parent.type.name !== 'codeBlock') return false
+  const attrs = parent.attrs as Record<string, unknown>
+  const language = typeof attrs.language === 'string' ? attrs.language : null
+  if (!isFormatterSupportedLanguage(language)) return false
+
+  const contentStart = $from.start()
+  const contentEnd = contentStart + parent.content.size
+  let fromOffset = Math.max(0, selection.from - contentStart)
+  let toOffset = Math.min(parent.content.size, selection.to - contentStart)
+  if (fromOffset >= toOffset) return false
+
+  // Formatting an arbitrary statement fragment can produce invalid code in its
+  // surrounding context, so expand the edit to whole logical lines.
+  fromOffset = parent.textContent.lastIndexOf('\n', fromOffset - 1) + 1
+  const followingNewline = parent.textContent.indexOf('\n', toOffset)
+  toOffset = followingNewline === -1 ? parent.content.size : followingNewline
+
+  const original = parent.textContent.slice(fromOffset, toOffset)
+
+  if (supportsExternalFormatterSelectionLineRanges(language)) {
+    const originalLines = parent.textContent.split('\n')
+    const startLineIndex = fromOffset === 0 ? 0 : parent.textContent.slice(0, fromOffset).split('\n').length - 1
+    const endLineIndex = startLineIndex + original.split('\n').length - 1
+    const marked = wrapJavaSelectionWithMarkers(originalLines, startLineIndex, endLineIndex)
+    const result = await formatCode(marked.code, language ?? '', {
+      startLine: marked.startLine,
+      endLine: marked.endLine,
+    })
+    const formattedFullCode = result.status === 'formatted' ? result.code : null
+    if (!formattedFullCode) return false
+    const formattedSelection = extractJavaFormattedSelection(formattedFullCode, marked.markerId)
+    if (!formattedSelection || formattedSelection.join('\n') === original) return false
+    const formatted = formattedSelection.join('\n')
+
+    return replaceSelectedCodeBlockText(
+      editor,
+      contentStart,
+      contentEnd,
+      [
+        ...originalLines.slice(0, startLineIndex),
+        ...formattedSelection,
+        ...originalLines.slice(endLineIndex + 1),
+      ].join('\n'),
+      contentStart + fromOffset,
+      contentStart + fromOffset + formatted.length,
+    )
+  }
+
+  const baseIndent = commonLeadingWhitespace(original)
+  const dedented = original.split('\n').map(line => (
+    line.startsWith(baseIndent) ? line.slice(baseIndent.length) : line.replace(/^[ \t]+/, '')
+  )).join('\n')
+  const result = await formatCode(dedented, language ?? '')
+  const formattedBody = result.status === 'formatted' ? result.code.replace(/\n$/, '') : null
+  if (!formattedBody) return false
+  const formatted = formattedBody.split('\n')
+    .map(line => (line.trim().length === 0 ? line : baseIndent + line))
+    .join('\n')
+  if (formatted === original) return false
+
+  const nextCodeText = parent.textContent.slice(0, fromOffset)
+    + formatted
+    + parent.textContent.slice(toOffset)
+  return replaceSelectedCodeBlockText(
+    editor,
+    contentStart,
+    contentEnd,
+    nextCodeText,
+    contentStart + fromOffset,
+    contentStart + fromOffset + formatted.length,
+  )
+}
+
+function replaceSelectedCodeBlockText(
+  editor: Editor,
+  contentStart: number,
+  contentEnd: number,
+  nextCodeText: string,
+  selectionStart: number,
+  selectionEnd: number,
+): boolean {
+  const transaction = editor.state.tr.replaceWith(
+    contentStart,
+    contentEnd,
+    editor.state.schema.text(nextCodeText),
+  ).setMeta('skipTrailingNode', true)
+  transaction.setSelection(TextSelection.create(transaction.doc, selectionStart, selectionEnd))
+  const scrollingElement = document.scrollingElement
+  const scrollTop = scrollingElement?.scrollTop ?? 0
+  const scrollLeft = scrollingElement?.scrollLeft ?? 0
+  editor.view.dispatch(transaction.scrollIntoView())
+  restoreCodeBlockScrollPosition(scrollingElement, scrollTop, scrollLeft)
+  return true
+}
+
+function applyLineDiffForRange(
+  originalCode: string,
+  originalLines: string[],
+  formattedLines: string[],
+  startLine: number,
+  endLine: number,
+): { code: string; replacementStart: number; replacementEnd: number } {
+  return { code: originalCode, replacementStart: 0, replacementEnd: 0 }
+  /*
+  const operations = diffFormattedLines(originalLines, formattedLines)
+  const operations = diffFormattedLines(originalLines, formattedLines)
+  const output: string[] = []
+  const operations = diffFormattedLines(originalLines, formattedLines)
+  console.log('DEBUG diff', { originalLines, formattedLines, operations, startLine, endLine })
+  const output: string[] = []
+  let originalIndex = 0
+  let formattedIndex = 0
+  let replacementStart: number | null = null
+  let replacementEnd: number | null = null
+
+  const recordBoundary = (index: number) => {
+    if (index === startLine - 1 && replacementStart === null) replacementStart = output.length
+    if (index === endLine && replacementEnd === null) replacementEnd = output.length
+  }
+
+  let operationIndex = 0
+  while (operationIndex < operations.length || originalIndex < originalLines.length) {
+    recordBoundary(originalIndex)
+    if (operationIndex >= operations.length) {
+      output.push(originalLines[originalIndex]!)
+      originalIndex += 1
+      recordBoundary(originalIndex)
+      continue
+    }
+
+    if (operations[operationIndex]!.type === 'equal') {
+      output.push(originalLines[originalIndex]!)
+      formattedIndex += 1
+      originalIndex += 1
+      recordBoundary(originalIndex)
+      operationIndex += 1
+      recordBoundary(originalIndex)
+      continue
+    }
+
+    const deleted: string[] = []
+    const inserted: string[] = []
+    const hunkOriginalStart = originalIndex
+    while (operationIndex < operations.length && operations[operationIndex]!.type !== 'equal') {
+      const operation = operations[operationIndex]!
+      if (operation.type === 'delete') {
+        deleted.push(operation.originalLine!)
+        originalIndex += 1
+        recordBoundary(originalIndex)
+      }
+      if (operation.type === 'insert') {
+        inserted.push(operation.formattedLine!)
+        formattedIndex += 1
+      }
+      recordBoundary(originalIndex)
+      operationIndex += 1
+    }
+
+    const intersectsSelection = hunkOriginalStart < endLine && originalIndex > startLine - 1
+    if (!intersectsSelection) {
+      output.push(...deleted)
+    } else {
+      const beforeCount = Math.max(0, Math.min(deleted.length, startLine - 1 - hunkOriginalStart))
+      const afterCount = Math.max(0, Math.min(deleted.length - beforeCount, originalIndex - endLine))
+      const before = deleted.slice(0, beforeCount)
+      const after = deleted.slice(deleted.length - afterCount)
+      output.push(...before)
+      if (replacementStart === null) replacementStart = output.length
+      output.push(...inserted)
+      if (replacementEnd === null) replacementEnd = output.length
+      output.push(...after)
+    }
+    recordBoundary(originalIndex)
+  }
+
+  if (replacementStart === null) replacementStart = output.length
+  return {
+    code: output.join('\n'),
+    replacementStart,
+    replacementEnd,
+  }
+  */
+}
+
+export function normalizeCurrentInlineCode(editor: Editor): boolean {
+  if (!editor.isEditable || !editor.isActive('code')) return false
+  const { from, to } = editor.state.selection
+  if (from === to) return false
+
+  const original = editor.state.doc.textBetween(from, to, '\n')
+  const normalized = normalizeInlineCodeWhitespace(original)
+  if (normalized === original) return false
+
+  const marks = editor.state.doc.resolve(from).marks()
+  editor.view.dispatch(editor.state.tr.replaceWith(
+    from,
+    to,
+    editor.state.schema.text(normalized, marks),
+  ).scrollIntoView())
+  return true
+}
+
+type MarkedJavaSelection = {
+  code: string
+  markerId: string
+  startLine: number
+  endLine: number
+}
+
+function wrapJavaSelectionWithMarkers(
+  lines: string[],
+  startLineIndex: number,
+  endLineIndex: number,
+): MarkedJavaSelection {
+  const markerId = `markleaf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  const beginMarker = `// __MARKLEAF_FORMAT_BEGIN_${markerId}__`
+  const endMarker = `// __MARKLEAF_FORMAT_END_${markerId}__`
+  const markedLines = [...lines]
+  markedLines.splice(startLineIndex, 0, beginMarker)
+  markedLines.splice(endLineIndex + 2, 0, endMarker)
+  return {
+    code: markedLines.join('\n'),
+    markerId,
+    startLine: startLineIndex + 2,
+    endLine: endLineIndex + 2,
+  }
+}
+
+function extractJavaFormattedSelection(formattedCode: string, markerId: string): string[] | null {
+  const lines = formattedCode.replace(/\r?\n$/, '').split('\n')
+  const beginMarker = `// __MARKLEAF_FORMAT_BEGIN_${markerId}__`
+  const endMarker = `// __MARKLEAF_FORMAT_END_${markerId}__`
+  const beginIndex = lines.findIndex(line => line.trim() === beginMarker)
+  const endIndex = lines.findIndex(line => line.trim() === endMarker)
+  if (beginIndex < 0 || endIndex <= beginIndex) return null
+  return lines.slice(beginIndex + 1, endIndex)
 }
 
 function setCodeBlockLanguageAt(editor: Editor, text?: string): boolean {

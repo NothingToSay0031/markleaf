@@ -35,6 +35,7 @@ final class AppWindowManager {
     private var themeSettingsController: ThemeSettingsWindowController?
     private var themeSettingsObservers: [NSObjectProtocol] = []
     private var optionalFontsController: OptionalFontsWindowController?
+    private var codeFormatterManagerController: CodeFormatterManagerWindowController?
     private var findPanelController: FindPanelController?
     private var updateCheckController: UpdateCheckController?
     private var startupActionState = StartupActionState()
@@ -533,6 +534,7 @@ final class AppWindowManager {
         let controller = PreferencesWindowController(
             styles: session.styles,
             themes: session.colorThemes,
+            currentThemeID: session.currentThemeId,
             initialSelectedPageIndex: restoration?.selectedPageIndex ?? 0
         )
         if let frame = restoration?.frame {
@@ -646,18 +648,22 @@ final class AppWindowManager {
     }
 
     /// 快捷键参考窗口。
-    /// 跟随系统开关变化后刷新所有会话的主题（开→跟随系统；关→恢复手动主题）。
-    func applyThemeModeToAll() {
+    /// 跟随系统开关变化后刷新主题。关闭同步时可保留当前已渲染主题，等待用户显式切换。
+    func applyThemeModeToAll(preservesRenderedTheme: Bool = false) {
         let follow = SettingsService.shared.settings.followSystemTheme
         for controller in windowControllers {
             if follow {
                 (controller.windowSession?.activeTabSession ?? controller.session).applyFollowSystemTheme()
-            } else {
+            } else if !preservesRenderedTheme {
                 (controller.windowSession?.activeTabSession ?? controller.session).setTheme(SettingsService.shared.settings.colorTheme)
             }
         }
-        preferencesController?.syncFollowSystemThemeState()
         refreshThemeSettings()
+        preferencesController?.syncActiveTheme(
+            activeWindowController?.windowSession?.activeTabSession?.currentThemeId
+                ?? activeSession?.currentThemeId
+        )
+        preferencesController?.syncFollowSystemThemeState()
     }
 
     /// 打开「更新内容」（对应 Windows ShowChangelog：按语言复制到可写缓存目录后在当前窗口打开）。
@@ -801,6 +807,10 @@ final class AppWindowManager {
         optionalFontsController?.refreshCurrentStyleNotice()
     }
 
+    func syncPreferencesActiveTheme(_ themeID: String?) {
+        preferencesController?.syncActiveTheme(themeID)
+    }
+
     func showOptionalFonts() {
         if let controller = optionalFontsController {
             controller.showWindow(nil)
@@ -823,6 +833,29 @@ final class AppWindowManager {
         controller.showWindow(nil)
         controller.refreshCurrentStyleNotice(focusMissingPack: true)
         controller.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func showCodeFormatterManager() {
+        if codeFormatterManagerController == nil {
+            let controller = CodeFormatterManagerWindowController()
+            codeFormatterManagerController = controller
+            controller.onClose = { [weak self, weak controller] in
+                guard let self, self.codeFormatterManagerController === controller else { return }
+                self.codeFormatterManagerController = nil
+            }
+            controller.onDidChange = { [weak self] in
+                self?.applyPreferencesToAll()
+            }
+        }
+        codeFormatterManagerController?.refresh()
+        codeFormatterManagerController?.showWindow(nil)
+        // A GUI app may not see tools installed from a terminal while it was
+        // inactive. Re-send the current catalog so existing webviews enable
+        // newly available languages immediately; formatters are spawned fresh
+        // for every request, so a full editor restart is not required.
+        applyPreferencesToAll()
+        codeFormatterManagerController?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -849,10 +882,57 @@ final class AppWindowManager {
             return
         }
         let controller = RecoveryWindowController(snapshots: pending)
+        controller.onOpen = { [weak self] snapshot in
+            self?.openRecoverySnapshot(snapshot)
+        }
         recoveryController = controller // 持有，避免按钮 target 失效
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func openRecoverySnapshot(_ snapshot: RecoverySnapshot) {
+        let fileURL = snapshot.documentPath.map(URL.init(fileURLWithPath:))
+        let title = snapshot.displayName
+            ?? fileURL?.lastPathComponent
+            ?? L10n.t("未命名文档")
+        let documentKind = NewDocumentKind.from(fileExtension: fileURL?.pathExtension)
+
+        switch RecoveryOpenPolicy.destination(
+            hasActiveWindow: activeWindowController != nil,
+            multiTabEnabled: SettingsService.shared.settings.multiTabEnabled
+        ) {
+        case .currentTab:
+            if let controller = activeWindowController,
+               controller.openRecoverySnapshot(snapshot) {
+                break
+            }
+            _ = newWindow(recoverySnapshot: snapshot, title: title, documentKind: documentKind)
+        case .newWindow:
+            _ = newWindow(recoverySnapshot: snapshot, title: title, documentKind: documentKind)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func newWindow(
+        recoverySnapshot: RecoverySnapshot,
+        title: String,
+        documentKind: NewDocumentKind
+    ) -> EditorWindowController {
+        newWindow(detachedDocument: DetachedTabDocument(
+            markdown: recoverySnapshot.markdown,
+            fileURL: recoverySnapshot.documentPath.map(URL.init(fileURLWithPath:)),
+            title: title,
+            encoding: SettingsService.shared.settings.defaultEncoding,
+            newLine: SettingsService.shared.settings.newLineStyle,
+            isDirty: true,
+            isReadOnly: false,
+            untitledSequence: recoverySnapshot.documentPath == nil
+                ? activeWindowController?.windowSession?.tabStore.nextUntitledSequence()
+                : nil,
+            documentKind: documentKind,
+            selection: nil
+        ))
     }
 
     /// 打开外部文件（Finder 关联 / Open With / Dock / 命令行），支持多文件与去重。

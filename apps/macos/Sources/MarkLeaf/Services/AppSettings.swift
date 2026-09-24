@@ -122,6 +122,10 @@ struct AppSettings: Codable {
         markdownCodeFence = try container.decodeIfPresent(String.self, forKey: .markdownCodeFence) ?? "backtick"
         markdownEmphasisMarker = try container.decodeIfPresent(String.self, forKey: .markdownEmphasisMarker) ?? "asterisk"
         markdownBulletMarker = try container.decodeIfPresent(String.self, forKey: .markdownBulletMarker) ?? "dash"
+        codeFormatterPaths = try container.decodeIfPresent([String: String].self, forKey: .codeFormatterPaths) ?? [:]
+        sqlFormatterDialect = SQLFormatterDialect.normalized(
+            try container.decodeIfPresent(String.self, forKey: .sqlFormatterDialect) ?? SQLFormatterDialect.ansi.rawValue
+        )
         showParagraphBlockHandle = try container.decodeIfPresent(Bool.self, forKey: .showParagraphBlockHandle) ?? true
         showCodeHighlight = try container.decodeIfPresent(Bool.self, forKey: .showCodeHighlight) ?? true
         suppressUnsafeEmphasisPrompt = try container.decodeIfPresent(Bool.self, forKey: .suppressUnsafeEmphasisPrompt) ?? false
@@ -225,6 +229,9 @@ struct AppSettings: Codable {
     var markdownCodeFence = "backtick"
     var markdownEmphasisMarker = "asterisk"
     var markdownBulletMarker = "dash"
+    /// 可选外部格式化器：工具 ID -> 可执行文件路径；留空时只在 PATH 中探测。
+    var codeFormatterPaths: [String: String] = [:]
+    var sqlFormatterDialect = SQLFormatterDialect.ansi
     var showParagraphBlockHandle = true
     var showCodeHighlight = true
     var suppressUnsafeEmphasisPrompt = false
