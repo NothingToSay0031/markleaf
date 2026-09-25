@@ -500,6 +500,13 @@ enum ExternalCodeFormatterCatalog {
             "/usr/local/bin/sqlfluff",
             "\(NSHomeDirectory())/.local/bin/sqlfluff",
         ],
+        "verible-verilog-format": [
+            "/opt/homebrew/bin/verible-verilog-format",
+            "/opt/homebrew/opt/verible/bin/verible-verilog-format",
+            "/usr/local/bin/verible-verilog-format",
+            "/usr/local/opt/verible/bin/verible-verilog-format",
+            "\(NSHomeDirectory())/.local/bin/verible-verilog-format",
+        ],
         "shfmt": [
             "/opt/homebrew/bin/shfmt",
             "/usr/local/bin/shfmt",

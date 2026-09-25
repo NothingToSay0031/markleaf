@@ -185,4 +185,22 @@ let javaDownloadURL = ExternalCodeFormatterCatalog.javaRuntimeDownloadURL
 expect(javaDownloadURL.host == "adoptium.net", "Java runtime guidance should use Adoptium")
 expect(javaDownloadURL.path.contains("/temurin/releases"), "Java runtime guidance should point to Temurin releases")
 
+// GUI apps do not inherit shell PATH entries such as /opt/homebrew/bin.
+// Exercise the fallback with the same minimal launchd PATH; when Verible is
+// installed in a common location it must still be detected.
+let veribleTool = ExternalCodeFormatterCatalog.tools.first { $0.id == "verible-verilog-format" }
+expect(veribleTool != nil, "Verible formatter should be cataloged")
+let veribleFallbackPath = "/opt/homebrew/bin/verible-verilog-format"
+if fileManager.isExecutableFile(atPath: veribleFallbackPath) {
+    let veribleAvailability = ExternalCodeFormatterCatalog.availability(
+        for: veribleTool!,
+        configuredPaths: [:],
+        environment: ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
+    )
+    guard case .available(let veribleLaunch) = veribleAvailability else {
+        fatalError("FAIL: Homebrew Verible should be found without a shell PATH")
+    }
+    expect(veribleLaunch.executablePath == veribleFallbackPath, "Verible fallback should preserve the resolved executable")
+}
+
 print("ExternalCodeFormatterLaunch tests passed")
