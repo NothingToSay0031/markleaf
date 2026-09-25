@@ -40,32 +40,74 @@ function renderKatex(element: HTMLElement, latex: string, displayMode: boolean):
   }
 }
 
-/// 测量 KaTeX 公式的自然宽度。display 模式公式居中且内容向两侧溢出，
-/// Range/scrollWidth 会受居中与大量内联片段影响而失真；让容器临时收缩
-/// 包裹（inline-block + max-content）后直接量宽度，得到唯一的自然宽度。
-function measureNaturalWidth(container: HTMLElement): number {
-  const display = container.style.display
-  const width = container.style.width
-  container.style.display = 'inline-block'
-  container.style.width = 'max-content'
-  const natural = container.getBoundingClientRect().width
-  container.style.display = display
-  container.style.width = width
-  return natural
+/// 同一帧内请求拟合的块统一处理：逐块拟合时每个块都要「读宽度 → 写测量样式 →
+/// 读自然宽度」，每次读取都会强制整篇文档重排，公式一多就是数千次全量重排。
+/// 合批后先统一读取可用宽度，再统一进入测量样式、统一读取自然宽度、统一写回，
+/// 整批只触发固定次重排，而每个块的判定结果与逐块处理完全一致。
+const pendingBlockMathFits = new Set<HTMLElement>()
+let blockMathFitHandle = 0
+
+function scheduleBlockMathFit(container: HTMLElement): void {
+  pendingBlockMathFits.add(container)
+  if (blockMathFitHandle) return
+  blockMathFitHandle = requestAnimationFrame(() => {
+    blockMathFitHandle = 0
+    const batch = [...pendingBlockMathFits]
+    pendingBlockMathFits.clear()
+    fitBlockMathBatch(batch)
+  })
+}
+
+type BlockMathMeasurement = {
+  container: HTMLElement
+  display: string
+  width: string
+  available: number
 }
 
 /// 让块级公式缩放到正好放下：KaTeX 内部全部用 em 单位布局，
 /// 缩放容器 font-size 即可按比例缩放整段公式，避免长公式产生横向滚动条。
-function fitBlockMathToWidth(container: HTMLElement): void {
-  const available = container.clientWidth
-  if (available <= 0) return
+function fitBlockMathBatch(containers: HTMLElement[]): void {
+  const measurements: BlockMathMeasurement[] = []
+  for (const container of containers) {
+    // 块级容器的可用宽度与自身 font-size 无关，因此在改写样式前读取即可。
+    const available = container.clientWidth
+    if (available <= 0) continue
+    measurements.push({
+      container,
+      display: container.style.display,
+      width: container.style.width,
+      available,
+    })
+  }
+  if (measurements.length === 0) return
 
-  container.style.fontSize = ''
-  const content = measureNaturalWidth(container)
-  if (content <= available) return
+  for (const item of measurements) {
+    item.container.style.fontSize = ''
+    item.container.style.display = 'inline-block'
+    item.container.style.width = 'max-content'
+  }
 
-  const base = parseFloat(getComputedStyle(container).fontSize) || 16
-  container.style.fontSize = `${((base * available) / content).toFixed(2)}px`
+  // 读取阶段不夹杂任何写入，重排只在这两个循环各发生一次。
+  const naturals: number[] = []
+  const bases: number[] = []
+  for (const item of measurements) {
+    const natural = item.container.getBoundingClientRect().width
+    naturals.push(natural)
+    bases.push(
+      natural > item.available
+        ? Number.parseFloat(getComputedStyle(item.container).fontSize) || 16
+        : 0,
+    )
+  }
+
+  for (const [index, item] of measurements.entries()) {
+    item.container.style.display = item.display
+    item.container.style.width = item.width
+    const natural = naturals[index]!
+    if (natural <= item.available) continue
+    item.container.style.fontSize = `${((bases[index]! * item.available) / natural).toFixed(2)}px`
+  }
 }
 
 /// 行内数学公式：`$...$` 或 `\(...\)`。
@@ -235,7 +277,7 @@ export const MathBlock = Node.create({
       }
       render(node)
 
-      const fit = () => fitBlockMathToWidth(div)
+      const fit = () => scheduleBlockMathFit(div)
       let lastWidth = -1
       const observer = new ResizeObserver((entries) => {
         const width = entries[0]?.contentRect.width ?? 0
@@ -245,7 +287,7 @@ export const MathBlock = Node.create({
         fit()
       })
       observer.observe(div)
-      const raf = requestAnimationFrame(fit)
+      fit()
 
       return {
         dom: div,
@@ -256,7 +298,7 @@ export const MathBlock = Node.create({
           return true
         },
         destroy: () => {
-          cancelAnimationFrame(raf)
+          pendingBlockMathFits.delete(div)
           observer.disconnect()
         },
       }
