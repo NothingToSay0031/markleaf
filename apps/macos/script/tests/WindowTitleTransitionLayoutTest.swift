@@ -18,6 +18,13 @@ expect(
     abs(titleView.titleSlideTransformForTesting.m41 - titleView.titleSlideOffsetForTesting) < 0.5,
     "a fresh title view must start in the hidden-marker slide state so its first modified animation matches later transitions"
 )
+let startupView = WindowTitleTransitionView()
+startupView.titleContentViewForTesting.layer?.transform = CATransform3DIdentity
+startupView.applyStartupStateWithoutAnimation()
+expect(
+    abs(startupView.titleSlideTransformForTesting.m41 - startupView.titleSlideOffsetForTesting) < 0.5,
+    "rejoining a window must restore the startup marker offset without animation"
+)
 titleView.setFilename("笔记.md")
 titleView.setStatusMarker("已修改", visible: false, animated: false)
 let firstHiddenOffset = titleView.titleSlideTransformForTesting.m41
@@ -120,6 +127,20 @@ expect(abs(visibleTransform.m41) < 0.5, "showing the marker must restore the who
 expect(
     abs(combinedMidpoint - titlebar.bounds.midX) < 0.5,
     "filename and modified marker must be centered as one group while modified"
+)
+
+// Multi-tab MarkLeaf is a fixed application title. It must never reserve the
+// hidden marker's width, or its first launch frame starts left of center.
+let fixedView = WindowTitleTransitionView()
+fixedView.setFixedApplicationTitle("MarkLeaf")
+expect(fixedView.statusSpaceWidthForTesting == 0, "fixed application titles must not reserve marker space")
+expect(abs(fixedView.titleSlideTransformForTesting.m41) < 0.5, "fixed application titles must remain centered")
+expect(fixedView.statusLabel.alphaValue == 0, "fixed application titles must hide the status marker")
+fixedView.setDocumentTitle("笔记.md")
+expect(fixedView.statusSpaceWidthForTesting > 0, "switching to document mode must restore marker space")
+expect(
+    abs(fixedView.titleSlideTransformForTesting.m41 - fixedView.titleSlideOffsetForTesting) < 0.5,
+    "switching to document mode must restore the stable hidden-marker centering offset"
 )
 
 print("PASS")

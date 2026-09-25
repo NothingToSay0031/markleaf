@@ -32,10 +32,18 @@ if grep -Fq 'tabBar.topAnchor.constraint(equalTo: rightColumn.topAnchor)' <<<"$M
   exit 1
 fi
 WINDOW_TITLE_BODY=$(method_body "$WINDOW" applyWindowTitle)
-require_text "$WINDOW_TITLE_BODY" 'windowTitleTransitionView?.setFilename(baseTitle)' \
+require_text "$WINDOW_TITLE_BODY" 'windowTitleTransitionView?.setDocumentTitle(baseTitle)' \
   'single-tab mode must retain the existing filename title behavior'
-require_text "$WINDOW_TITLE_BODY" 'windowTitleTransitionView?.setFilename("MarkLeaf")' \
-  'multi-tab mode must render its fixed title with the shared centered title view'
+require_text "$WINDOW_TITLE_BODY" 'windowTitleTransitionView?.setFixedApplicationTitle("MarkLeaf")' \
+  'multi-tab mode must reserve zero status-marker space for the fixed application title'
+require_text "$WINDOW_TITLE_BODY" 'windowTitleTransitionView?.setDocumentTitle(baseTitle)' \
+  'single-document mode must reserve document status-marker space'
+require "$WINDOW" 'private var isTitleTransitionReady = false' \
+  'startup title updates must remain non-animated until the first run loop'
+require "$WINDOW" 'transitionTitleStatusMarker(to: marker, animated: isTitleTransitionReady)' \
+  'single-document startup must not trigger a title slide'
+require "$WINDOW" 'transitionView.applyStartupStateWithoutAnimation()' \
+  'titlebar layer attachment must synchronously restore the startup title state'
 
 require "$SETTINGS" 'var multiTabEnabled = true' 'multi-tab must default to enabled'
 require "$SETTINGS" 'forKey: .multiTabEnabled' 'legacy settings must decode multi-tab with a safe default'

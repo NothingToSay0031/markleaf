@@ -52,6 +52,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     private var statusClearTimer: Timer?
     private var windowTitleTransitionView: WindowTitleTransitionView?
     private var isTitleStatusMarkerVisible: Bool?
+    private var isTitleTransitionReady = false
 
     func applySurfaceBackground(_ color: NSColor) {
         rightColumnView?.wantsLayer = true
@@ -175,8 +176,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             window?.title = "MarkLeaf"
             window?.titleVisibility = .hidden
             windowTitleTransitionView?.isHidden = false
-            windowTitleTransitionView?.setFilename("MarkLeaf")
-            transitionTitleStatusMarker(to: .init(text: "", isVisible: false))
+            windowTitleTransitionView?.setFixedApplicationTitle("MarkLeaf")
+            isTitleStatusMarkerVisible = false
             return
         }
 
@@ -187,14 +188,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         window?.title = baseTitle
         window?.titleVisibility = .hidden
         windowTitleTransitionView?.isHidden = false
-        windowTitleTransitionView?.setFilename(baseTitle)
+        windowTitleTransitionView?.setDocumentTitle(baseTitle)
         let marker = DocumentWindowTitle.statusMarker(
             isDirty: activeSession.isDirty,
             isReadOnly: activeSession.isReadOnly,
             modifiedLabel: L10n.t("已修改"),
             readOnlyLabel: L10n.t("只读")
         )
-        transitionTitleStatusMarker(to: marker)
+        transitionTitleStatusMarker(to: marker, animated: isTitleTransitionReady)
     }
 
     private func installWindowTitleTransitionView() {
@@ -218,16 +219,26 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             ),
         ])
         windowTitleTransitionView = transitionView
+        transitionView.applyStartupStateWithoutAnimation()
+        // Startup calls this controller before the window has been presented and
+        // before the initial document has been restored. Keep those calls
+        // non-animated; only transitions after the first run-loop turn slide.
+        DispatchQueue.main.async { [weak self] in
+            self?.isTitleTransitionReady = true
+        }
     }
 
-    private func transitionTitleStatusMarker(to marker: DocumentWindowTitle.StatusMarker) {
+    private func transitionTitleStatusMarker(
+        to marker: DocumentWindowTitle.StatusMarker,
+        animated: Bool
+    ) {
         guard let titleView = windowTitleTransitionView else { return }
         guard isTitleStatusMarkerVisible != marker.isVisible else {
             titleView.setStatusMarker(marker.text, visible: marker.isVisible, animated: false)
             return
         }
         isTitleStatusMarkerVisible = marker.isVisible
-        titleView.setStatusMarker(marker.text, visible: marker.isVisible, animated: true)
+        titleView.setStatusMarker(marker.text, visible: marker.isVisible, animated: animated)
     }
 
     /// 为标签创建（或复用）会话与编辑器视图；懒加载的唯一入口。
