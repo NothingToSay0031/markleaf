@@ -1,6 +1,6 @@
 # MarkLeaf Changelog
 
-## 1.7.7 — 2026-09-24
+## 1.7.7 — 2026-09-25
 
 ### Added
 
@@ -28,6 +28,7 @@
 - Completed syntax highlighting for declared code-language presets and external formatter languages, and unified their display order.
 - Source mode now supports chapter detection and chapter navigation.
 - Improved drag-selection highlight performance for long documents and large selections.
+- Improved opening performance for very large Markdown documents by reducing full-document parser rescans and batching block formula width measurements.
 
 ### Fixed
 
@@ -39,6 +40,8 @@
 - Fixed some status information disappearing or flickering after hiding and showing the sidebar.
 - Fixed sidebar search-field vertical alignment and cases where clicking it did not start a search.
 - Fixed the workspace search field being incorrectly available when no workspace was open.
+- Fixed the “Visual Settings…” button not being localized.
+- Fixed the titlebar MarkLeaf or filename occasionally starting off-center and jumping on launch.
 - Fixed Markdown and plain-text files dragged from Finder not opening.
 - Fixed unstable highlights, whole-line false highlights, or selections that could not be cleared during long-document drags, Shift+arrow selection, or autoscroll near window edges.
 - Fixed copying only the current cell when multiple table cells were selected.
