@@ -14,7 +14,6 @@ import Image from '@tiptap/extension-image'
 import Link from '@tiptap/extension-link'
 import { Table, TableRow, TableHeader, TableCell, renderTableToMarkdown } from '@tiptap/extension-table'
 import TaskItem from '@tiptap/extension-task-item'
-import TaskList from '@tiptap/extension-task-list'
 import { Markdown } from '@tiptap/markdown'
 import StarterKit from '@tiptap/starter-kit'
 import Bold from '@tiptap/extension-bold'
@@ -22,6 +21,7 @@ import Italic from '@tiptap/extension-italic'
 import { MarkdownUnderline } from './markdown-underline'
 import CodeBlock from '@tiptap/extension-code-block'
 import { getListMarker, ListItem } from '@tiptap/extension-list'
+import { OrderedListMarkdown, TaskListMarkdown, tableMarkdownTokenizer } from './markdown-block-tokenizers'
 import { markdown as codeMirrorMarkdown } from '@codemirror/lang-markdown'
 import { syntaxTree } from '@codemirror/language'
 import { EditorState as CodeMirrorEditorState } from '@codemirror/state'
@@ -2052,6 +2052,7 @@ const MarkLeafTable = Table.extend({
     const caption = typeof node.attrs?.caption === 'string' && node.attrs.caption.length > 0 ? node.attrs.caption : null
     return caption ? `> tablecaption: ${caption}\n\n${markdown}` : markdown
   },
+  markdownTokenizer: tableMarkdownTokenizer,
 })
 
 // 加载文档后，把「> tablecaption: …」引用块合并为紧跟其后的表格的 caption 属性。
@@ -3565,6 +3566,7 @@ const editorExtensions = [
     listItem: false,
     link: false,
     paragraph: false,
+    orderedList: false,
   }),
   MarkdownBold,
   MarkdownItalic,
@@ -3594,7 +3596,8 @@ const editorExtensions = [
   MermaidCodeBlockControls,
   CodeBlockHighlight,
   ExpandedSourceEditor,
-  TaskList,
+  OrderedListMarkdown,
+  TaskListMarkdown,
   TaskItem.configure({ nested: true }),
   Markdown.configure({
     markedOptions: {
